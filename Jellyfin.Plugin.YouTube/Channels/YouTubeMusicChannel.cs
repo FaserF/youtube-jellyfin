@@ -262,7 +262,6 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
                 Name = displayTitle,
                 SeriesName = artist,
                 Artists = new List<string> { artist },
-                Album = "YouTube Music",
                 Overview = $"🎵 {artist} — {t.Title}\n🔗 https://music.youtube.com/watch?v={t.VideoId}",
                 Type = ChannelItemType.Media,
                 ContentType = ChannelMediaContentType.Song,

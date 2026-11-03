@@ -53,11 +53,13 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             {
                 ChannelMediaContentType.Episode,
                 ChannelMediaContentType.Movie,
-                ChannelMediaContentType.Clip
+                ChannelMediaContentType.Clip,
+                ChannelMediaContentType.Song
             },
             MediaTypes = new List<ChannelMediaType>
             {
-                ChannelMediaType.Video
+                ChannelMediaType.Video,
+                ChannelMediaType.Audio
             },
             SupportsContentDownloading = true,
             SupportsSortOrderToggle = true,
@@ -115,6 +117,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                     ("cat_watch_later", "⏱️ Watch Later", "Videos saved to your Watch Later playlist"),
                     ("cat_liked", "👍 Liked Videos", "Videos you have liked on YouTube"),
                     ("cat_playlists", "📁 My Playlists", "Your personal and saved YouTube playlists"),
+                    ("cat_ytmusic", "🎵 YouTube Music (Audio Streaming)", "Personal Supermix, Liked Songs, Listen Again & Music Charts in HQ Audio"),
                     ("cat_trending", "🔥 Trending", "Currently trending videos in your region"),
                     ("cat_gaming", "🎮 Gaming", "Top gaming streams and videos"),
                     ("cat_music", "🎵 Music", "Music videos and charts"),
@@ -138,6 +141,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                 {
                     ("cat_trending", "🔥 Trending (Public)", "Currently trending videos on YouTube (Unlinked Public Mode)"),
                     ("cat_home", "🏠 Popular & Discover (Public)", "Popular technology, news, and entertainment videos"),
+                    ("cat_ytmusic", "🎵 YouTube Music (Public Audio)", "Top music charts, new releases, chill & workout audio tracks"),
                     ("cat_gaming", "🎮 Gaming (Public)", "Popular gaming videos"),
                     ("cat_music", "🎵 Music (Public)", "Popular music videos"),
                     ("cat_live", "🔴 Live Streams (Public)", "Public live broadcasts"),
@@ -243,6 +247,65 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             return new ChannelItemResult { Items = mapped, TotalRecordCount = mapped.Count };
         }
 
+        // YouTube Music Audio Submenu inside YouTube Channel
+        if (query.FolderId == "cat_ytmusic")
+        {
+            var ytmFolders = new (string Id, string Title, string Desc)[]
+            {
+                ("ytm_sub_supermix", "🎧 My Supermix & Top Music Charts", "Top music charts and personal mix (Audio Stream)"),
+                ("ytm_sub_liked", "❤️ Liked Songs & Music", "Songs and tracks you have liked (Audio Stream)"),
+                ("ytm_sub_history", "🔁 Listen Again & History", "Recently played tracks (Audio Stream)"),
+                ("ytm_sub_chill", "☕ Chill, Lo-Fi & Study Beats", "Relaxing background music (Audio Stream)"),
+                ("ytm_sub_workout", "⚡ Workout & Electronic Mix", "High-energy workout music (Audio Stream)")
+            };
+            foreach (var (id, title, desc) in ytmFolders)
+            {
+                items.Add(new ChannelItemInfo { Id = id, Name = title, Overview = desc, Type = ChannelItemType.Folder });
+            }
+
+            return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+        }
+
+        if (query.FolderId.StartsWith("ytm_sub_", StringComparison.Ordinal))
+        {
+            var ytmLimit = config.YouTubeMusicMaxItemsPerFeed > 0 ? config.YouTubeMusicMaxItemsPerFeed : 25;
+            var tracks = query.FolderId switch
+            {
+                "ytm_sub_liked" => await client.GetBrowseFeedAsync("VLLV", effectiveUserKey, ytmLimit, cancellationToken).ConfigureAwait(false),
+                "ytm_sub_history" => await client.GetBrowseFeedAsync("FEhistory", effectiveUserKey, ytmLimit, cancellationToken).ConfigureAwait(false),
+                "ytm_sub_chill" => await client.SearchVideosAsync("Chill Lo-Fi Study Music Beats", effectiveUserKey, ytmLimit, cancellationToken).ConfigureAwait(false),
+                "ytm_sub_workout" => await client.SearchVideosAsync("Workout Electronic Music Mix", effectiveUserKey, ytmLimit, cancellationToken).ConfigureAwait(false),
+                _ => await client.GetBrowseFeedAsync("FEmusic", effectiveUserKey, ytmLimit, cancellationToken).ConfigureAwait(false)
+            };
+
+            var idx = 1;
+            foreach (var t in tracks)
+            {
+                var artist = !string.IsNullOrWhiteSpace(t.ChannelTitle) ? t.ChannelTitle.Replace(" - Topic", string.Empty, StringComparison.OrdinalIgnoreCase) : "YouTube Music";
+                var audioItem = new ChannelItemInfo
+                {
+                    Id = $"ytm_{t.VideoId}",
+                    Name = $"🎵 {artist} — {t.Title}",
+                    SeriesName = artist,
+                    Artists = new List<string> { artist },
+                    Overview = $"🎵 {artist} — {t.Title}\n🔗 https://music.youtube.com/watch?v={t.VideoId}",
+                    Type = ChannelItemType.Media,
+                    ContentType = ChannelMediaContentType.Song,
+                    MediaType = ChannelMediaType.Audio,
+                    IndexNumber = idx++,
+                    ParentIndexNumber = 1,
+                    PremiereDate = t.PublishedAt ?? DateTime.UtcNow.Date,
+                    CommunityRating = 8.8f,
+                    RunTimeTicks = t.DurationSeconds > 0 ? TimeSpan.FromSeconds(t.DurationSeconds).Ticks : null,
+                    ImageUrl = !string.IsNullOrWhiteSpace(t.ThumbnailUrl) ? t.ThumbnailUrl : $"https://i.ytimg.com/vi/{t.VideoId}/hqdefault.jpg"
+                };
+                YouTubeIdKeys.SetAudioId(audioItem, t.VideoId);
+                items.Add(audioItem);
+            }
+
+            return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+        }
+
         // Standard Category Feeds
         var browseId = query.FolderId switch
         {
@@ -338,12 +401,50 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
 
     public async Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
     {
-        var videoId = id.StartsWith("yt_", StringComparison.Ordinal) ? id["yt_".Length..] : id;
+        var isAudio = id.StartsWith("ytm_", StringComparison.Ordinal);
+        var videoId = isAudio
+            ? id["ytm_".Length..]
+            : (id.StartsWith("yt_", StringComparison.Ordinal) ? id["yt_".Length..] : id);
         using var client = CreateClient();
         var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
         if (streamInfo == null)
         {
             return Array.Empty<MediaSourceInfo>();
+        }
+
+        if (isAudio)
+        {
+            var bitrate = (Config.YouTubeMusicPreferredBitrate > 0 ? Config.YouTubeMusicPreferredBitrate : 256) * 1000;
+            return new[]
+            {
+                new MediaSourceInfo
+                {
+                    Id = videoId,
+                    Name = $"{streamInfo.Title} (YouTube Music HQ Audio)",
+                    Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/audio.m4a",
+                    Protocol = MediaProtocol.Http,
+                    Container = "m4a",
+                    SupportsDirectPlay = true,
+                    SupportsDirectStream = true,
+                    SupportsTranscoding = true,
+                    RunTimeTicks = streamInfo.DurationSeconds > 0 ? TimeSpan.FromSeconds(streamInfo.DurationSeconds).Ticks : null,
+                    MediaStreams = new List<MediaStream>
+                    {
+                        new()
+                        {
+                            Type = MediaStreamType.Audio,
+                            Index = 0,
+                            Codec = "aac",
+                            Channels = 2,
+                            SampleRate = 44100,
+                            BitRate = bitrate,
+                            Language = "und",
+                            Title = "YouTube Music Audio (AAC)",
+                            IsDefault = true
+                        }
+                    }
+                }
+            };
         }
 
         var mediaStreams = new List<MediaStream>

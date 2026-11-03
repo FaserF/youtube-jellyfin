@@ -48,6 +48,16 @@ public partial class YouTubeApiClient
             }
         }
 
+        if (string.Equals(browseId, "FEmusic", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(token))
+        {
+            var popularMusic = await GetMostPopularVideosApiV3Async(token, maxResults, cancellationToken, "10").ConfigureAwait(false);
+            if (popularMusic.Count > 0)
+            {
+                _cache[cacheKey] = (popularMusic, DateTime.UtcNow);
+                return popularMusic;
+            }
+        }
+
         try
         {
             var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
@@ -466,13 +476,14 @@ public partial class YouTubeApiClient
         return list;
     }
 
-    private async Task<List<YouTubeVideoItem>> GetMostPopularVideosApiV3Async(string accessToken, int maxResults, CancellationToken cancellationToken)
+    private async Task<List<YouTubeVideoItem>> GetMostPopularVideosApiV3Async(string accessToken, int maxResults, CancellationToken cancellationToken, string? videoCategoryId = null)
     {
         var list = new List<YouTubeVideoItem>();
         try
         {
             var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-            var url = $"https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode={config.PreferredRegion}&maxResults={Math.Min(50, maxResults)}";
+            var catParam = !string.IsNullOrWhiteSpace(videoCategoryId) ? $"&videoCategoryId={Uri.EscapeDataString(videoCategoryId)}" : string.Empty;
+            var url = $"https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode={config.PreferredRegion}{catParam}&maxResults={Math.Min(50, maxResults)}";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
