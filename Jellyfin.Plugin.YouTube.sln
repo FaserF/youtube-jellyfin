@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.YouTube", "Jellyfin.Plugin.YouTube\Jellyfin.Plugin.YouTube.csproj", "{A9F4E2C1-8B7D-4E6A-9C5B-3D2E1F0A8B9C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.YouTube.Tests", "Jellyfin.Plugin.YouTube.Tests\Jellyfin.Plugin.YouTube.Tests.csproj", "{C8D7E6F5-4A3B-2C1D-9E8F-7A6B5C4D3E2F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A9F4E2C1-8B7D-4E6A-9C5B-3D2E1F0A8B9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9F4E2C1-8B7D-4E6A-9C5B-3D2E1F0A8B9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9F4E2C1-8B7D-4E6A-9C5B-3D2E1F0A8B9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9F4E2C1-8B7D-4E6A-9C5B-3D2E1F0A8B9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8D7E6F5-4A3B-2C1D-9E8F-7A6B5C4D3E2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8D7E6F5-4A3B-2C1D-9E8F-7A6B5C4D3E2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8D7E6F5-4A3B-2C1D-9E8F-7A6B5C4D3E2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8D7E6F5-4A3B-2C1D-9E8F-7A6B5C4D3E2F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,12 @@
+# Global owner for any changes
+*                               @FaserF
+
+# GitHub Actions & Automation
+/.github/*                      @FaserF
+/.github/workflows/*            @FaserF
+/.github/ISSUE_TEMPLATE/*       @FaserF
+/.github/scripts/*              @FaserF
+
+# Documentation & Manifests
+*.md                            @FaserF
+manifest.json                   @FaserF

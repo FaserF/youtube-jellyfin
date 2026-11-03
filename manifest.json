@@ -1,0 +1,29 @@
+[
+  {
+    "guid": "a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c",
+    "name": "YouTube",
+    "description": "SmartTube 1:1 Parity YouTube Integration for Jellyfin: Multi-User TV OAuth Login, Personal Home/Subscriptions/History/WatchLater Feeds, 4K Ad-Free Direct Streaming, SponsorBlock Auto-Skip, ReturnYouTubeDislike, Favorite-to-Like Sync, and Metadata & Artwork Providers.",
+    "overview": "1:1 SmartTube Android TV replacement for Jellyfin with per-user YouTube OAuth, SponsorBlock, ReturnYouTubeDislike, and 4K ad-free playback.",
+    "owner": "FaserF",
+    "category": "Channels",
+    "imageUrl": "https://raw.githubusercontent.com/FaserF/youtube-jellyfin/main/Jellyfin.Plugin.YouTube/thumb.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "- SmartTube 1:1 Parity YouTube Channel (Home, Subscriptions, Continue Watching, Subscribed Channels A-Z, Watch Later, Liked Videos, Playlists, Trending, Gaming, Music, Live)\n- Multi-User YouTube TV OAuth Device Code Login (with Public/Anonymous fallback for unlinked users)\n- 4K Ad-Free Direct Streaming with SOCKS5 proxy & HLS M3U8 segment rewriting\n- Server-side & Web UI SponsorBlock Auto-Skip across Android TV, Fire TV, Web, and Mobile\n- ReturnYouTubeDislike community ratings & overview stats\n- Native Series/Season/Episode/Movie/Image Metadata Providers, .strm subscription sync, and YouTube Watch History sync",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.0.0.0/youtube.zip",
+        "checksum": "",
+        "timestamp": "2026-11-03T01:00:00Z"
+      },
+      {
+        "version": "1.0.0.0",
+        "changelog": "- SmartTube 1:1 Parity YouTube Channel (Home, Subscriptions, Continue Watching, Subscribed Channels A-Z, Watch Later, Liked Videos, Playlists, Trending, Gaming, Music, Live)\n- Multi-User YouTube TV OAuth Device Code Login (with Public/Anonymous fallback for unlinked users)\n- 4K Ad-Free Direct Streaming with SOCKS5 proxy & HLS M3U8 segment rewriting\n- Server-side & Web UI SponsorBlock Auto-Skip across Android TV, Fire TV, Web, and Mobile\n- ReturnYouTubeDislike community ratings & overview stats\n- Native Series/Season/Episode/Movie/Image Metadata Providers, .strm subscription sync, and YouTube Watch History sync",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.0.0.0/youtube.zip",
+        "checksum": "",
+        "timestamp": "2026-11-03T01:00:00Z"
+      }
+    ]
+  }
+]

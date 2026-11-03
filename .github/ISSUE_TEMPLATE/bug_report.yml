@@ -1,0 +1,64 @@
+name: Bug Report
+description: Create a report to help us improve the YouTube Jellyfin plugin
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out this form as completely as possible.
+  - type: input
+    id: jellyfin-version
+    attributes:
+      label: Jellyfin Server Version
+      description: What version of Jellyfin are you running? (e.g., 10.11.0, 10.10.6)
+      placeholder: "10.11.0"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: What version of the YouTube plugin is installed?
+      placeholder: "1.0.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: client-type
+    attributes:
+      label: Client / Player
+      description: Which client are you using to access Jellyfin?
+      options:
+        - Jellyfin Web (Chrome / Edge / Firefox)
+        - Jellyfin for Android
+        - Jellyfin for Android TV / Fire TV
+        - Jellyfin Media Player (Desktop)
+        - Swiftfin / Apple TV
+        - Other (specify below)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps To Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Please copy and paste any relevant Jellyfin server logs or browser console messages.
+      render: shell

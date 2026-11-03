@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>YouTube (SmartTube Parity)</title>
+</head>
+<body>
+    <div id="YouTubeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="YouTubeConfigForm">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">YouTube (SmartTube 1:1 Parity) — Multi-User TV Account Linking</h2>
+                        <p>Each Jellyfin user can link their own personal YouTube account via the official YouTube TV Device Code flow. Unlinked users automatically receive Public YouTube (or can be hidden below).</p>
+
+                        <div style="background:#18181b;border:1px solid #e50914;border-radius:8px;padding:16px;margin-bottom:20px;">
+                            <h3 style="margin-top:0;color:#ff4d4d;">📺 Link Jellyfin User to YouTube via TV Code</h3>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="selectJellyfinUser">Select Jellyfin User to Link</label>
+                                <select is="emby-select" id="selectJellyfinUser" class="emby-select-withcolor emby-select"></select>
+                            </div>
+                            <button is="emby-button" type="button" id="btnGenerateTvCode" class="raised button-submit" style="background:#e50914;color:#fff;">
+                                <span>🔑 Generate YouTube TV Activation Code</span>
+                            </button>
+                            <div id="tvCodeDisplayArea" style="display:none;margin-top:15px;padding:14px;background:#111;border-radius:6px;">
+                                <div style="font-size:14px;color:#ccc;">1. Open <a href="https://www.google.com/device" target="_blank" style="color:#ff4d4d;font-weight:bold;">https://www.google.com/device</a> (or <a href="https://www.youtube.com/tv/activate" target="_blank" style="color:#ff4d4d;">youtube.com/tv/activate</a>)</div>
+                                <div style="font-size:24px;font-weight:bold;letter-spacing:3px;color:#fff;margin:10px 0;" id="tvUserCodeText">---</div>
+                                <div style="font-size:13px;color:#aaa;" id="tvCodeStatusText">Waiting for activation in browser...</div>
+                            </div>
+                        </div>
+
+                        <div style="background:#18181b;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;">
+                            <h3 style="margin-top:0;">👤 Linked Jellyfin User Accounts</h3>
+                            <div id="linkedUsersTable">Loading users...</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">SmartTube Playback, SponsorBlock &amp; Dislikes</h2>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableStreamingChannel" type="checkbox" is="emby-checkbox" />
+                                <span>Enable YouTube Channel in Jellyfin</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnablePublicFallback" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users (If unchecked, YouTube is strictly exclusive to Fabian &amp; linked users)</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableSponsorBlock" type="checkbox" is="emby-checkbox" />
+                                <span>Enable SponsorBlock Server-Side Auto-Skip (Android TV, Web &amp; Mobile)</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtSponsorBlockCategories">SponsorBlock Categories to Auto-Skip</label>
+                            <input id="txtSponsorBlockCategories" type="text" is="emby-input" />
+                            <div class="fieldDescription">Comma-separated: sponsor,selfpromo,interaction,intro,outro,music_offtopic</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableRyd" type="checkbox" is="emby-checkbox" />
+                                <span>Enable ReturnYouTubeDislike Stats &amp; Community Ratings</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableFavLike" type="checkbox" is="emby-checkbox" />
+                                <span>Sync Jellyfin Favorite (♥️) to YouTube Like</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="selectMaxRes">Preferred Maximum Resolution</label>
+                            <select is="emby-select" id="selectMaxRes" class="emby-select-withcolor emby-select">
+                                <option value="2160">4K UHD (2160p)</option>
+                                <option value="1440">QHD (1440p)</option>
+                                <option value="1080">Full HD (1080p)</option>
+                                <option value="720">HD (720p)</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtProxyUrl">SOCKS5 / HTTP Proxy URL</label>
+                            <input id="txtProxyUrl" type="text" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtStrmPath">YouTube .strm Library Path</label>
+                            <input id="txtStrmPath" type="text" is="emby-input" />
+                        </div>
+                        <div>
+                            <button is="emby-button" type="submit" class="raised button-submit block">
+                                <span>Save Settings</span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = "a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c";
+                var pollTimer = null;
+
+                async function loadUsersList() {
+                    try {
+                        var res = await fetch("/api/youtubePlugin/users");
+                        var data = await res.json();
+                        var sel = document.getElementById("selectJellyfinUser");
+                        sel.innerHTML = "";
+                        var rows = [];
+                        (data.users || []).forEach(function (u) {
+                            var opt = document.createElement("option");
+                            opt.value = u.username;
+                            opt.setAttribute("data-uid", u.id);
+                            opt.textContent = u.username + (u.isLinked ? " (Linked: " + u.linkedAccount + ")" : " (Unlinked)");
+                            sel.appendChild(opt);
+
+                            rows.push(
+                                '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;">' +
+                                '<div><strong>' + u.username + '</strong> — ' +
+                                (u.isLinked ? '<span style="color:#4cd964;">✅ Connected (' + u.linkedAccount + ')</span>' : '<span style="color:#999;">🌐 Public Mode (Unlinked)</span>') +
+                                '</div>' +
+                                '</div>'
+                            );
+                        });
+                        document.getElementById("linkedUsersTable").innerHTML = rows.join("") || "No users found.";
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+
+                document.getElementById("YouTubeConfigPage").addEventListener("pageshow", function () {
+                    Dashboard.showLoadingMsg();
+                    loadUsersList();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        document.getElementById("chkEnableStreamingChannel").checked = config.EnableStreamingChannel !== false;
+                        document.getElementById("chkEnablePublicFallback").checked = config.EnablePublicFallbackForUnlinkedUsers !== false;
+                        document.getElementById("chkEnableSponsorBlock").checked = config.EnableSponsorBlock !== false;
+                        document.getElementById("txtSponsorBlockCategories").value = config.SponsorBlockCategories || "sponsor,selfpromo,interaction,intro,outro";
+                        document.getElementById("chkEnableRyd").checked = config.EnableReturnYouTubeDislike !== false;
+                        document.getElementById("chkEnableFavLike").checked = config.EnableFavoriteToLikeSync !== false;
+                        document.getElementById("selectMaxRes").value = String(config.PreferredMaxResolution || 2160);
+                        document.getElementById("txtProxyUrl").value = config.ProxyUrl || "";
+                        document.getElementById("txtStrmPath").value = config.StrmLibraryPath || "/data/youtube";
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                document.getElementById("btnGenerateTvCode").addEventListener("click", async function () {
+                    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                    var sel = document.getElementById("selectJellyfinUser");
+                    var jfUser = sel.value || "fabian";
+                    var jfUid = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute("data-uid") : "";
+
+                    var res = await fetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
+                    var data = await res.json();
+                    document.getElementById("tvCodeDisplayArea").style.display = "block";
+                    document.getElementById("tvUserCodeText").textContent = data.user_code || "ERROR";
+                    document.getElementById("tvCodeStatusText").textContent = "Waiting for you to enter the code for Jellyfin user '" + jfUser + "'...";
+
+                    if (data.device_code) {
+                        pollTimer = setInterval(async function () {
+                            try {
+                                var pr = await fetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfUser) + "&jellyfinUserId=" + encodeURIComponent(jfUid || ""), { method: "POST" });
+                                var pd = await pr.json();
+                                if (pd.success) {
+                                    clearInterval(pollTimer);
+                                    pollTimer = null;
+                                    document.getElementById("tvCodeStatusText").style.color = "#4cd964";
+                                    document.getElementById("tvCodeStatusText").textContent = "✅ Linked YouTube account '" + pd.accountName + "' to Jellyfin user '" + pd.jellyfinUser + "'!";
+                                    loadUsersList();
+                                }
+                            } catch (e) {}
+                        }, (data.interval || 5) * 1000);
+                    }
+                });
+
+                document.getElementById("YouTubeConfigForm").addEventListener("submit", function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.EnableStreamingChannel = document.getElementById("chkEnableStreamingChannel").checked;
+                        config.EnablePublicFallbackForUnlinkedUsers = document.getElementById("chkEnablePublicFallback").checked;
+                        config.EnableSponsorBlock = document.getElementById("chkEnableSponsorBlock").checked;
+                        config.SponsorBlockCategories = document.getElementById("txtSponsorBlockCategories").value.trim();
+                        config.EnableReturnYouTubeDislike = document.getElementById("chkEnableRyd").checked;
+                        config.EnableFavoriteToLikeSync = document.getElementById("chkEnableFavLike").checked;
+                        config.PreferredMaxResolution = parseInt(document.getElementById("selectMaxRes").value, 10) || 2160;
+                        config.ProxyUrl = document.getElementById("txtProxyUrl").value.trim();
+                        config.StrmLibraryPath = document.getElementById("txtStrmPath").value.trim();
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

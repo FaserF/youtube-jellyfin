@@ -1,0 +1,125 @@
+using MediaBrowser.Model.Plugins;
+
+namespace Jellyfin.Plugin.YouTube.Configuration;
+
+public class PluginConfiguration : BasePluginConfiguration
+{
+    public PluginConfiguration()
+    {
+        EnableStreamingChannel = true;
+        EnablePublicFallbackForUnlinkedUsers = true;
+        PrimaryJellyfinUser = "fabian";
+        PrimaryJellyfinUserId = "c24de2a9fe3644569746e53b80490646";
+        PreferredLanguage = "de-DE";
+        PreferredRegion = "DE";
+        PreferredMaxResolution = 2160;
+        EnableSponsorBlock = true;
+        SponsorBlockCategories = "sponsor,selfpromo,interaction,intro,outro";
+        EnableReturnYouTubeDislike = true;
+        EnablePlayheadSync = true;
+        EnableFavoriteToLikeSync = true;
+        EnableYouTubeLibrary = true;
+        EnableStrmSync = true;
+        EnableMovieSupport = true;
+        FetchThumbnails = true;
+        StrmLibraryPath = "/data/youtube";
+        ProxyUrl = "socks5://easyproxy-sports:1080";
+        YtDlpPath = "/usr/local/bin/yt-dlp";
+        OAuthClientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
+        OAuthClientSecret = "SboVhoG9s0rNafixCSGGKXAT";
+        PersistedRefreshToken = string.Empty;
+        PersistedAccessToken = string.Empty;
+        PersistedTokenExpiresAtUnix = 0;
+        CookiesText = string.Empty;
+        UserAccounts = new List<YouTubeUserAccountEntry>();
+    }
+
+    public bool EnableStreamingChannel { get; set; }
+    public bool EnablePublicFallbackForUnlinkedUsers { get; set; }
+    public string PrimaryJellyfinUser { get; set; }
+    public string PrimaryJellyfinUserId { get; set; }
+    public string PreferredLanguage { get; set; }
+    public string PreferredRegion { get; set; }
+    public int PreferredMaxResolution { get; set; }
+    public bool EnableSponsorBlock { get; set; }
+    public string SponsorBlockCategories { get; set; }
+    public bool EnableReturnYouTubeDislike { get; set; }
+    public bool EnablePlayheadSync { get; set; }
+    public bool EnableFavoriteToLikeSync { get; set; }
+    public bool EnableYouTubeLibrary { get; set; }
+    public bool EnableStrmSync { get; set; }
+    public bool EnableMovieSupport { get; set; }
+    public bool FetchThumbnails { get; set; }
+    public string StrmLibraryPath { get; set; }
+    public string ProxyUrl { get; set; }
+    public string YtDlpPath { get; set; }
+    public string OAuthClientId { get; set; }
+    public string OAuthClientSecret { get; set; }
+    public string PersistedRefreshToken { get; set; }
+    public string PersistedAccessToken { get; set; }
+    public long PersistedTokenExpiresAtUnix { get; set; }
+    public string CookiesText { get; set; }
+    public List<YouTubeUserAccountEntry> UserAccounts { get; set; }
+
+    public YouTubeUserAccountEntry? GetAccountForUser(string? usernameOrId)
+    {
+        var normalized = NormalizeId(usernameOrId);
+        if (!string.IsNullOrWhiteSpace(normalized) && UserAccounts != null)
+        {
+            var match = UserAccounts.FirstOrDefault(u =>
+                string.Equals(NormalizeId(u.JellyfinUser), normalized, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(NormalizeId(u.JellyfinUserId), normalized, StringComparison.OrdinalIgnoreCase));
+            if (match != null && !string.IsNullOrWhiteSpace(match.RefreshToken))
+            {
+                return match;
+            }
+        }
+
+        if (IsPrimaryUser(usernameOrId) && !string.IsNullOrWhiteSpace(PersistedRefreshToken))
+        {
+            return new YouTubeUserAccountEntry
+            {
+                JellyfinUser = PrimaryJellyfinUser,
+                JellyfinUserId = PrimaryJellyfinUserId,
+                AccountName = "Fabian (Primary)",
+                ClientId = OAuthClientId,
+                ClientSecret = OAuthClientSecret,
+                RefreshToken = PersistedRefreshToken,
+                AccessToken = PersistedAccessToken,
+                TokenExpiresAtUnix = PersistedTokenExpiresAtUnix
+            };
+        }
+
+        return null;
+    }
+
+    public bool IsPrimaryUser(string? usernameOrId)
+    {
+        if (string.IsNullOrWhiteSpace(usernameOrId))
+        {
+            return false;
+        }
+
+        var norm = NormalizeId(usernameOrId);
+        return string.Equals(norm, NormalizeId(PrimaryJellyfinUser), StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(norm, NormalizeId(PrimaryJellyfinUserId), StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(norm, "fabian", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(norm, "c24de2a9fe3644569746e53b80490646", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string NormalizeId(string? raw) =>
+        string.IsNullOrWhiteSpace(raw) ? string.Empty : raw.Replace("-", string.Empty, StringComparison.Ordinal).Trim();
+}
+
+public class YouTubeUserAccountEntry
+{
+    public string JellyfinUser { get; set; } = string.Empty;
+    public string JellyfinUserId { get; set; } = string.Empty;
+    public string AccountName { get; set; } = string.Empty;
+    public string ChannelHandle { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
+    public long TokenExpiresAtUnix { get; set; }
+}

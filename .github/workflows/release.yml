@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Type of release (stable, beta, nightly)"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - beta
+          - nightly
+      bump_level:
+        description: "Bump Level (patch, minor, major)"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      version_override:
+        description: "Manually override new version (e.g. 1.0.1.0). Leave empty for auto calculation."
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  determine-version:
+    name: Determine Release Version & Changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      tag: ${{ steps.calc.outputs.tag }}
+      is_prerelease: ${{ steps.calc.outputs.is_prerelease }}
+      from_tag: ${{ steps.calc.outputs.from_tag }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Version & Tag
+        id: calc
+        shell: bash
+        env:
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+          BUMP_LEVEL: ${{ github.event.inputs.bump_level }}
+          OVERRIDE: ${{ github.event.inputs.version_override }}
+        run: |
+          git fetch --tags --force 2>/dev/null || true
+          
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname 2>/dev/null | head -n 1)
+          echo "Latest tag: ${LATEST_TAG}"
+          echo "from_tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+
+          if [ -n "$OVERRIDE" ]; then
+            VERSION="$OVERRIDE"
+          elif [ -n "$LATEST_TAG" ]; then
+            CLEAN_VER="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH BUILD <<< "$CLEAN_VER"
+            MAJOR=${MAJOR:-1}
+            MINOR=${MINOR:-0}
+            PATCH=${PATCH:-0}
+            BUILD=${BUILD:-0}
+            
+            if [ "$BUMP_LEVEL" = "major" ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              BUILD=0
+            elif [ "$BUMP_LEVEL" = "minor" ]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              BUILD=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+            VERSION="${MAJOR}.${MINOR}.${PATCH}.${BUILD}"
+          else
+            VERSION="1.0.0.0"
+          fi
+
+          if [ "$RELEASE_TYPE" = "beta" ]; then
+            TAG="v${VERSION}-beta"
+            IS_PRE="true"
+          elif [ "$RELEASE_TYPE" = "nightly" ]; then
+            SHA=$(git rev-parse --short HEAD)
+            TAG="v${VERSION}-nightly+${SHA}"
+            IS_PRE="true"
+          else
+            TAG="v${VERSION}"
+            IS_PRE="false"
+          fi
+
+          echo "Calculated version: $VERSION"
+          echo "Calculated tag: $TAG"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRE" >> $GITHUB_OUTPUT
+
+  build-and-publish:
+    name: Build, Package & Publish Release
+    needs: determine-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Generate Changelog
+        env:
+          FROM_TAG: ${{ needs.determine-version.outputs.from_tag }}
+        run: |
+          python .github/scripts/generate_changelog.py --from-tag "${FROM_TAG}" --repo "${{ github.repository }}" > CHANGELOG_RELEASE.md
+          head -n 25 CHANGELOG_RELEASE.md > CHANGELOG_SUMMARY.txt
+
+      - name: Build Plugin (Release)
+        run: |
+          dotnet restore
+          dotnet build -c Release -p:Version=${{ needs.determine-version.outputs.version }} -p:AssemblyVersion=${{ needs.determine-version.outputs.version }} -p:FileVersion=${{ needs.determine-version.outputs.version }}
+
+      - name: Run Tests
+        run: |
+          dotnet run --project Jellyfin.Plugin.YouTube.Tests -c Release --no-build
+
+      - name: Package Plugin Archive
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp Jellyfin.Plugin.YouTube/bin/Release/net10.0/Jellyfin.Plugin.YouTube.dll dist/
+          cp Jellyfin.Plugin.YouTube/bin/Release/net10.0/Jellyfin.Plugin.YouTube.pdb dist/
+          cp Jellyfin.Plugin.YouTube/*.png dist/ 2>/dev/null || true
+          cp meta.json dist/ 2>/dev/null || true
+          
+          cd dist
+          zip -9 -r ../youtube.zip .
+          cd ..
+          
+          md5sum youtube.zip > checksums.txt
+          sha256sum youtube.zip >> checksums.txt
+          cat checksums.txt
+
+      - name: Update manifest.json
+        run: |
+          python .github/scripts/update_manifest.py \
+            --manifest-path manifest.json \
+            --zip-path youtube.zip \
+            --version "${{ needs.determine-version.outputs.version }}" \
+            --changelog-file CHANGELOG_SUMMARY.txt \
+            --repo "${{ github.repository }}"
+
+      - name: Commit and Push Updated Manifest
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): bump manifest to ${{ needs.determine-version.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe148935b9c7a2d3e187219cb85d835492cce # v2.2.1
+        with:
+          tag_name: ${{ needs.determine-version.outputs.tag }}
+          name: "Release ${{ needs.determine-version.outputs.version }}"
+          body_path: CHANGELOG_RELEASE.md
+          prerelease: ${{ needs.determine-version.outputs.is_prerelease == 'true' }}
+          draft: false
+          files: |
+            youtube.zip
+            checksums.txt

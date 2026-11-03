@@ -1,0 +1,18 @@
+{
+  "category": "Channels",
+  "changelog": "- SmartTube 1:1 Parity YouTube Channel (Home, Subscriptions, Continue Watching, Subscribed Channels A-Z, Watch Later, Liked Videos, Playlists, Trending, Gaming, Music, Live)\n- Multi-User YouTube TV OAuth Device Code Login (with Public/Anonymous fallback for unlinked users)\n- 4K Ad-Free Direct Streaming with SOCKS5 proxy & HLS M3U8 segment rewriting\n- Server-side & Web UI SponsorBlock Auto-Skip across Android TV, Fire TV, Web, and Mobile\n- ReturnYouTubeDislike community ratings & overview stats\n- Native Series/Season/Episode/Movie/Image Metadata Providers, .strm subscription sync, and YouTube Watch History sync",
+  "description": "SmartTube 1:1 Parity YouTube Integration for Jellyfin: Multi-User TV OAuth Login, Personal Home/Subscriptions/History/WatchLater Feeds, 4K Ad-Free Direct Streaming, SponsorBlock Auto-Skip, ReturnYouTubeDislike, Favorite-to-Like Sync, and Metadata & Artwork Providers.",
+  "guid": "a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c",
+  "name": "YouTube",
+  "overview": "1:1 SmartTube Android TV replacement for Jellyfin with per-user YouTube OAuth, SponsorBlock, ReturnYouTubeDislike, and 4K ad-free playback.",
+  "owner": "FaserF",
+  "targetAbi": "12.0.0.0",
+  "timestamp": "2026-11-03T01:00:00.0000000Z",
+  "version": "1.0.0.0",
+  "status": "Active",
+  "autoUpdate": false,
+  "imagePath": "thumb.png",
+  "assemblies": [
+    "Jellyfin.Plugin.YouTube.dll"
+  ]
+}

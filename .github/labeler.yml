@@ -1,0 +1,16 @@
+backend:
+  - 'Jellyfin.Plugin.YouTube/**/*.cs'
+  - 'Jellyfin.Plugin.YouTube.csproj'
+
+frontend:
+  - 'Jellyfin.Plugin.YouTube/Features/Script/**/*.js'
+
+tests:
+  - 'Jellyfin.Plugin.YouTube.Tests/**/*'
+
+ci-cd:
+  - '.github/**/*'
+
+documentation:
+  - '*.md'
+  - 'docs/**/*'

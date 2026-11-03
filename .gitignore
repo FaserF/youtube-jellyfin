@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.zip
+.env
+*seed*.json
+*cookies*.txt
+*credentials*

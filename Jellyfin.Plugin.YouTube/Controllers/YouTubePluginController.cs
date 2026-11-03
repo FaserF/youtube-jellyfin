@@ -1,0 +1,458 @@
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Text;
+using Jellyfin.Plugin.YouTube.Api;
+using Jellyfin.Plugin.YouTube.Configuration;
+using Jellyfin.Plugin.YouTube.Models;
+using Jellyfin.Plugin.YouTube.Providers;
+using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.YouTube.Controllers;
+
+[ApiController]
+[Route("api/youtubePlugin")]
+public class YouTubePluginController : ControllerBase
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILibraryManager _libraryManager;
+    private readonly ILogger<YouTubePluginController> _logger;
+    private readonly ILoggerFactory _loggerFactory;
+
+    public YouTubePluginController(
+        IHttpClientFactory httpClientFactory,
+        ILibraryManager libraryManager,
+        ILogger<YouTubePluginController> logger,
+        ILoggerFactory loggerFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+        _libraryManager = libraryManager;
+        _logger = logger;
+        _loggerFactory = loggerFactory;
+    }
+
+    private static PluginConfiguration Config => Plugin.Instance?.Configuration ?? new PluginConfiguration();
+
+    private YouTubeApiClient CreateClient() =>
+        new(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
+
+    [HttpGet("Script")]
+    [AllowAnonymous]
+    [Produces("application/javascript")]
+    public ActionResult GetClientScript()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = assembly.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith("youtubePlugin.js", StringComparison.OrdinalIgnoreCase));
+
+        if (resourceName == null)
+        {
+            return NotFound("// youtubePlugin.js resource not found");
+        }
+
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            return NotFound("// youtubePlugin.js stream null");
+        }
+
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return Content(reader.ReadToEnd(), "application/javascript; charset=utf-8");
+    }
+
+    [HttpPost("auth/device-code")]
+    [AllowAnonymous]
+    public async Task<ActionResult<YouTubeDeviceCodeResponse>> RequestDeviceCode(CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        var resp = await client.RequestDeviceCodeAsync(cancellationToken).ConfigureAwait(false);
+        if (resp == null)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "Failed to request YouTube TV device code" });
+        }
+
+        return Ok(resp);
+    }
+
+    [HttpPost("auth/poll")]
+    [AllowAnonymous]
+    public async Task<ActionResult> PollDeviceCode(
+        [FromQuery] string deviceCode,
+        [FromQuery] string jellyfinUser = "fabian",
+        [FromQuery] string? jellyfinUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(deviceCode))
+        {
+            return BadRequest(new { error = "Missing deviceCode" });
+        }
+
+        using var client = CreateClient();
+        var (success, error, account) = await client.PollDeviceTokenAsync(deviceCode, jellyfinUser, jellyfinUserId, cancellationToken).ConfigureAwait(false);
+        if (!success)
+        {
+            return Ok(new { pending = true, error });
+        }
+
+        return Ok(new
+        {
+            pending = false,
+            success = true,
+            jellyfinUser = account?.JellyfinUser,
+            accountName = account?.AccountName
+        });
+    }
+
+    [HttpGet("users")]
+    [AllowAnonymous]
+    public async Task<ActionResult> GetUserMappings(CancellationToken cancellationToken)
+    {
+        var config = Config;
+        var jfUsers = new List<object>();
+        try
+        {
+            using var http = _httpClientFactory.CreateClient();
+            var json = await http.GetStringAsync("http://127.0.0.1:8096/Users/Public", cancellationToken).ConfigureAwait(false);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var el in doc.RootElement.EnumerateArray())
+                {
+                    var uid = el.TryGetProperty("Id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
+                    var uname = el.TryGetProperty("Name", out var nProp) ? nProp.GetString() ?? string.Empty : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(uname))
+                    {
+                        var linkedAcc = config.GetAccountForUser(uname)?.AccountName ?? config.GetAccountForUser(uid)?.AccountName;
+                        jfUsers.Add(new
+                        {
+                            id = uid,
+                            username = uname,
+                            linkedAccount = linkedAcc,
+                            isLinked = !string.IsNullOrWhiteSpace(linkedAcc)
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not query /Users/Public");
+        }
+
+        return Ok(new
+        {
+            enablePublicFallback = config.EnablePublicFallbackForUnlinkedUsers,
+            primaryUser = config.PrimaryJellyfinUser,
+            users = jfUsers,
+            accounts = (config.UserAccounts ?? new List<YouTubeUserAccountEntry>()).Select(a => new
+            {
+                a.JellyfinUser,
+                a.JellyfinUserId,
+                a.AccountName,
+                hasRefreshToken = !string.IsNullOrWhiteSpace(a.RefreshToken)
+            })
+        });
+    }
+
+    [HttpDelete("users/{jellyfinUser}")]
+    [AllowAnonymous]
+    public ActionResult UnlinkUserAccount([FromRoute] string jellyfinUser)
+    {
+        var config = Config;
+        if (config.UserAccounts != null)
+        {
+            config.UserAccounts.RemoveAll(u =>
+                string.Equals(PluginConfiguration.NormalizeId(u.JellyfinUser), PluginConfiguration.NormalizeId(jellyfinUser), StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(PluginConfiguration.NormalizeId(u.JellyfinUserId), PluginConfiguration.NormalizeId(jellyfinUser), StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (config.IsPrimaryUser(jellyfinUser))
+        {
+            config.PersistedRefreshToken = string.Empty;
+            config.PersistedAccessToken = string.Empty;
+        }
+
+        Plugin.Instance?.SaveConfiguration();
+        return Ok(new { unlinked = true, jellyfinUser });
+    }
+
+    [HttpGet("stream/{videoId}/info")]
+    [AllowAnonymous]
+    public async Task<ActionResult<YouTubeStreamInfoDto>> GetStreamInfo(
+        [FromRoute] string videoId,
+        CancellationToken cancellationToken)
+    {
+        var cleanId = CleanVideoId(videoId);
+        using var client = CreateClient();
+        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        if (info == null)
+        {
+            return NotFound(new { error = $"Could not resolve YouTube stream for {cleanId}" });
+        }
+
+        return Ok(info);
+    }
+
+    [HttpGet("stream/{videoId}/play")]
+    [HttpGet("stream/{videoId}/master.m3u8")]
+    [AllowAnonymous]
+    public async Task<ActionResult> PlayOrProxyStream(
+        [FromRoute] string videoId,
+        CancellationToken cancellationToken)
+    {
+        var cleanId = CleanVideoId(videoId);
+        using var client = CreateClient();
+        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        if (info == null || string.IsNullOrWhiteSpace(info.DirectStreamUrl))
+        {
+            return NotFound(new { error = $"Unable to resolve YouTube stream for {cleanId}" });
+        }
+
+        // If we have an HLS manifest URL, fetch it through our SOCKS5 proxy and rewrite segment/variant URLs
+        // so that IP-bound googlevideo URLs are proxied cleanly through Jellyfin!
+        if (!string.IsNullOrWhiteSpace(info.HlsManifestUrl))
+        {
+            try
+            {
+                var rawM3u8 = await client.HttpClient.GetStringAsync(info.HlsManifestUrl, cancellationToken).ConfigureAwait(false);
+                var rewritten = RewriteM3u8Urls(rawM3u8, info.HlsManifestUrl);
+                return Content(rewritten, "application/vnd.apple.mpegurl; charset=utf-8");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to proxy HLS manifest for {VideoId}, falling back to direct stream proxy", cleanId);
+            }
+        }
+
+        return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    [HttpGet("proxy")]
+    [HttpGet("proxy/{filename}")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ProxyUrl(
+        [FromRoute] string? filename = null,
+        [FromQuery] string? u = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(u))
+        {
+            return BadRequest();
+        }
+
+        string targetUrl;
+        try
+        {
+            targetUrl = Encoding.UTF8.GetString(Convert.FromBase64String(u));
+        }
+        catch
+        {
+            targetUrl = Uri.UnescapeDataString(u);
+        }
+
+        if (!targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest();
+        }
+
+        using var client = CreateClient();
+        if (!targetUrl.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
+            !targetUrl.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
+            (targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+             targetUrl.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) ||
+             targetUrl.Contains("hls_variant", StringComparison.OrdinalIgnoreCase)))
+        {
+            var rawM3u8 = await client.HttpClient.GetStringAsync(targetUrl, cancellationToken).ConfigureAwait(false);
+            var rewritten = RewriteM3u8Urls(rawM3u8, targetUrl);
+            return Content(rewritten, "application/vnd.apple.mpegurl; charset=utf-8");
+        }
+
+        return await ProxyRemoteUrlInternalAsync(client, targetUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ActionResult> ProxyRemoteUrlInternalAsync(YouTubeApiClient client, string targetUrl, CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+        if (Request.Headers.TryGetValue("Range", out var rangeHeader))
+        {
+            req.Headers.TryAddWithoutValidation("Range", rangeHeader.ToArray());
+        }
+
+        using var resp = await client.HttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        Response.StatusCode = (int)resp.StatusCode;
+
+        if (resp.Content.Headers.ContentRange != null)
+        {
+            Response.Headers["Content-Range"] = resp.Content.Headers.ContentRange.ToString();
+        }
+
+        if (resp.Content.Headers.ContentLength.HasValue)
+        {
+            Response.ContentLength = resp.Content.Headers.ContentLength.Value;
+        }
+
+        Response.Headers["Accept-Ranges"] = "bytes";
+        Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t";
+        await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
+        return new EmptyResult();
+    }
+
+    private static string RewriteM3u8Urls(string m3u8Content, string baseUrl)
+    {
+        var baseUri = new Uri(baseUrl);
+        var sb = new StringBuilder();
+        var lines = m3u8Content.Split('\n');
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                sb.AppendLine();
+                continue;
+            }
+
+            if (line.StartsWith('#'))
+            {
+                // Rewrite URI="..." inside #EXT-X-MEDIA or #EXT-X-MAP tags
+                var uriUpdated = System.Text.RegularExpressions.Regex.Replace(line, @"URI=""([^""]+)""", m =>
+                {
+                    var abs = new Uri(baseUri, m.Groups[1].Value).ToString();
+                    var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                    var isPlaylist = !abs.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
+                                     !abs.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
+                                     (abs.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_variant", StringComparison.OrdinalIgnoreCase));
+                    var ext = isPlaylist ? "index.m3u8" : "seg.ts";
+                    return $"URI=\"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
+                });
+                sb.AppendLine(uriUpdated);
+            }
+            else
+            {
+                var abs = new Uri(baseUri, line).ToString();
+                var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                var isPlaylist = !abs.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
+                                 !abs.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
+                                 (abs.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_variant", StringComparison.OrdinalIgnoreCase));
+                var ext = isPlaylist ? "index.m3u8" : "seg.ts";
+                sb.AppendLine($"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    [HttpGet("sponsorblock/{videoId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<SponsorBlockSegmentDto>>> GetSponsorBlock(
+        [FromRoute] string videoId,
+        CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        var segments = await client.GetSponsorBlockSegmentsAsync(CleanVideoId(videoId), cancellationToken).ConfigureAwait(false);
+        return Ok(segments);
+    }
+
+    [HttpGet("ryd/{videoId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ReturnYouTubeDislikeDto>> GetDislikes(
+        [FromRoute] string videoId,
+        CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        var stats = await client.GetReturnYouTubeDislikeAsync(CleanVideoId(videoId), cancellationToken).ConfigureAwait(false);
+        return Ok(stats ?? new ReturnYouTubeDislikeDto { Id = CleanVideoId(videoId) });
+    }
+
+    [HttpGet("comments/{videoId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<YouTubeCommentDto>>> GetComments(
+        [FromRoute] string videoId,
+        [FromQuery] string? userId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient();
+        var comments = await client.GetVideoCommentsAsync(CleanVideoId(videoId), userId, 30, cancellationToken).ConfigureAwait(false);
+        return Ok(comments);
+    }
+
+    [HttpGet("search")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<YouTubeVideoItem>>> Search(
+        [FromQuery] string q,
+        [FromQuery] string? userId = null,
+        [FromQuery] int limit = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            return Ok(new List<YouTubeVideoItem>());
+        }
+
+        using var client = CreateClient();
+        var results = await client.SearchVideosAsync(q, userId, limit, cancellationToken).ConfigureAwait(false);
+        return Ok(results);
+    }
+
+    [HttpPost("rate/{videoId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult> RateVideo(
+        [FromRoute] string videoId,
+        [FromQuery] string rating = "like",
+        [FromQuery] string? userId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient();
+        var ok = await client.RateVideoAsync(CleanVideoId(videoId), rating, userId ?? "fabian", cancellationToken).ConfigureAwait(false);
+        return Ok(new { success = ok, videoId = CleanVideoId(videoId), rating });
+    }
+
+    [HttpPost("subscribe/{channelId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult> Subscribe(
+        [FromRoute] string channelId,
+        [FromQuery] string? userId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var client = CreateClient();
+        var ok = await client.SubscribeChannelAsync(channelId, userId ?? "fabian", cancellationToken).ConfigureAwait(false);
+        return Ok(new { success = ok, channelId });
+    }
+
+    [HttpPost("library/sync")]
+    [AllowAnonymous]
+    public async Task<ActionResult> SyncLibrary(CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        var count = await ScheduledTasks.SyncYouTubeStrmTask.PerformSyncAsync(client, Config, _logger, cancellationToken).ConfigureAwait(false);
+        _libraryManager.QueueLibraryScan();
+        return Ok(new { success = true, videosSynced = count });
+    }
+
+    private string CleanVideoId(string raw)
+    {
+        if (raw.StartsWith("yt_", StringComparison.Ordinal))
+        {
+            return raw["yt_".Length..];
+        }
+
+        if (Guid.TryParse(raw, out var guid))
+        {
+            var item = _libraryManager.GetItemById(guid);
+            if (item != null)
+            {
+                var vid = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+                if (!string.IsNullOrWhiteSpace(vid))
+                {
+                    return vid;
+                }
+            }
+        }
+
+        return raw;
+    }
+}

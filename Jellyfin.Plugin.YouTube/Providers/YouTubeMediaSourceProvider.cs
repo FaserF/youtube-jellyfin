@@ -1,0 +1,143 @@
+using System.Collections.Concurrent;
+using Jellyfin.Plugin.YouTube.Api;
+using Jellyfin.Plugin.YouTube.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.MediaInfo;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.YouTube.Providers;
+
+/// <summary>
+/// Dynamic MediaSource provider for YouTube .strm and library items.
+/// Supplies playable MediaSourceInfo with pre-populated video, audio, and subtitle streams
+/// so Android TV, Fire TV, Web, and Mobile clients play immediately without FFmpeg probing delays.
+/// </summary>
+public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<YouTubeMediaSourceProvider> _logger;
+    private readonly ILoggerFactory _loggerFactory;
+
+    public int Order => -100;
+
+    private static readonly ConcurrentDictionary<string, (MediaSourceInfo Source, DateTime CachedAt)> _sourceCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
+
+    public YouTubeMediaSourceProvider(
+        IHttpClientFactory httpClientFactory,
+        ILogger<YouTubeMediaSourceProvider> logger,
+        ILoggerFactory loggerFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+        _loggerFactory = loggerFactory;
+    }
+
+    public async Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
+    {
+        if (item is not Episode && item is not Movie)
+        {
+            return Enumerable.Empty<MediaSourceInfo>();
+        }
+
+        var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+        if (string.IsNullOrWhiteSpace(videoId))
+        {
+            return Enumerable.Empty<MediaSourceInfo>();
+        }
+
+        if (_sourceCache.TryGetValue(videoId, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheTtl)
+        {
+            var cachedSource = cached.Source;
+            cachedSource.Id = item.Id.ToString("N");
+            return new[] { cachedSource };
+        }
+
+        try
+        {
+            using var client = new YouTubeApiClient(
+                _httpClientFactory.CreateClient("YouTube"),
+                _loggerFactory.CreateLogger<YouTubeApiClient>());
+
+            var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
+            var width = streamInfo?.Width > 0 ? streamInfo.Width : 1920;
+            var height = streamInfo?.Height > 0 ? streamInfo.Height : 1080;
+
+            var streams = new List<MediaStream>
+            {
+                new()
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    Width = width,
+                    Height = height,
+                    BitRate = 8000000,
+                    Title = $"{height}p Ad-Free (YouTube)",
+                    AspectRatio = "16:9",
+                    IsDefault = true
+                },
+                new()
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    Language = "und",
+                    Title = "YouTube Audio",
+                    IsDefault = true
+                }
+            };
+
+            if (streamInfo?.Subtitles != null)
+            {
+                var subIdx = 2;
+                foreach (var kv in streamInfo.Subtitles)
+                {
+                    streams.Add(new MediaStream
+                    {
+                        Type = MediaStreamType.Subtitle,
+                        Index = subIdx++,
+                        Language = kv.Key,
+                        Title = $"YouTube ({kv.Key})",
+                        Codec = "vtt",
+                        IsExternal = true,
+                        IsExternalUrl = true,
+                        Path = kv.Value,
+                        DeliveryUrl = kv.Value
+                    });
+                }
+            }
+
+            var source = new MediaSourceInfo
+            {
+                Id = item.Id.ToString("N"),
+                Name = $"{item.Name} ({height}p Ad-Free)",
+                Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/master.m3u8",
+                Protocol = MediaProtocol.Http,
+                Container = !string.IsNullOrWhiteSpace(streamInfo?.HlsManifestUrl) ? "hls" : "mp4",
+                SupportsDirectPlay = true,
+                SupportsDirectStream = true,
+                SupportsTranscoding = true,
+                RunTimeTicks = streamInfo?.DurationSeconds > 0 ? TimeSpan.FromSeconds(streamInfo.DurationSeconds).Ticks : item.RunTimeTicks,
+                MediaStreams = streams
+            };
+
+            _sourceCache[videoId] = (source, DateTime.UtcNow);
+            return new[] { source };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "YouTubeMediaSourceProvider failed for {VideoId}", videoId);
+            return Enumerable.Empty<MediaSourceInfo>();
+        }
+    }
+
+    public Task<ILiveStream> OpenMediaSource(string openToken, List<ILiveStream> currentLiveStreams, CancellationToken cancellationToken) =>
+        Task.FromResult<ILiveStream>(null!);
+}

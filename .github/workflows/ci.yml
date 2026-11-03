@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: .NET 10 Build & Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Solution (Release)
+        run: dotnet build -c Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet run --project Jellyfin.Plugin.YouTube.Tests -c Release --no-build
+
+      - name: Verify Package Assembly & Archive
+        shell: bash
+        run: |
+          mkdir -p package_staging
+          cp Jellyfin.Plugin.YouTube/bin/Release/net10.0/Jellyfin.Plugin.YouTube.dll package_staging/
+          cp Jellyfin.Plugin.YouTube/bin/Release/net10.0/Jellyfin.Plugin.YouTube.pdb package_staging/
+          cp Jellyfin.Plugin.YouTube/*.png package_staging/ 2>/dev/null || true
+          cp meta.json package_staging/ 2>/dev/null || true
+          
+          cd package_staging
+          zip -r ../youtube.zip .
+          cd ..
+          
+          # Verify integrity
+          unzip -l youtube.zip
+          test -f youtube.zip
+
+  lint-and-validate:
+    name: Code Hygiene & Manifest Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Validate Python Scripts
+        run: |
+          python -m py_compile .github/scripts/*.py
+
+      - name: Validate JavaScript Syntax
+        run: |
+          node --check Jellyfin.Plugin.YouTube/Features/Script/youtubePlugin.js
+
+      - name: Validate JSON Manifest
+        run: |
+          python -c "import json; m=json.load(open('manifest.json')); assert len(m) > 0; print('Manifest is valid JSON')"
+          python -c "import json; m=json.load(open('meta.json')); assert 'guid' in m; print('Meta is valid JSON')"
+
+      - name: Test Changelog Generator Dry-Run
+        run: |
+          python .github/scripts/generate_changelog.py --repo FaserF/youtube-jellyfin > /dev/null
