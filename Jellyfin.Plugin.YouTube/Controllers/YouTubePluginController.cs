@@ -461,7 +461,10 @@ public class YouTubePluginController : ControllerBase
         var baseUri = new Uri(baseUrl);
         var sb = new StringBuilder();
         var lines = m3u8Content.Split('\n');
-        var serverUrl = Config.GetPublicServerUrl(Request.Scheme, Request.Host.Value);
+        var reqProto = Request.Headers["X-Forwarded-Proto"].FirstOrDefault();
+        var reqHost = Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? Request.Host.Value;
+        var scheme = !string.IsNullOrWhiteSpace(reqProto) ? reqProto : Request.Scheme;
+        var serverUrl = Config.GetPublicServerUrl(scheme, reqHost);
         var prefLang = Config.PreferredLanguage ?? "de";
 
         // Keep track of audio groups and whether a default audio track was chosen per group

@@ -497,7 +497,10 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
         Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
     {
         var path = context.HttpContext.Request.Path.Value ?? string.Empty;
-        if (path.StartsWith("/Videos/", StringComparison.OrdinalIgnoreCase) &&
+        var isVideoPath = path.StartsWith("/Videos/", StringComparison.OrdinalIgnoreCase);
+        var isAudioPath = path.StartsWith("/Audio/", StringComparison.OrdinalIgnoreCase);
+
+        if ((isVideoPath || isAudioPath) &&
             (path.Contains("/stream", StringComparison.OrdinalIgnoreCase) || path.Contains("/master.m3u8", StringComparison.OrdinalIgnoreCase)))
         {
             var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -510,10 +513,15 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
                     if (!string.IsNullOrWhiteSpace(videoId))
                     {
                         var req = context.HttpContext.Request;
-                        var scheme = req.Headers["X-Forwarded-Proto"].FirstOrDefault() ?? req.Scheme;
+                        var proto = req.Headers["X-Forwarded-Proto"].FirstOrDefault();
                         var host = req.Headers["X-Forwarded-Host"].FirstOrDefault() ?? req.Host.Value;
-                        var serverUrl = !string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty;
-                        var target = (item is MediaBrowser.Controller.Entities.Audio.Audio || (item.Path != null && item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase)))
+                        var scheme = !string.IsNullOrWhiteSpace(proto) ? proto : req.Scheme;
+                        var serverUrl = Plugin.Instance?.Configuration.GetPublicServerUrl(scheme, host)
+                            ?? (!string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty);
+
+                        var isAudio = isAudioPath || item is MediaBrowser.Controller.Entities.Audio.Audio ||
+                                      (item.Path != null && item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase));
+                        var target = isAudio
                             ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
                             : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
 
