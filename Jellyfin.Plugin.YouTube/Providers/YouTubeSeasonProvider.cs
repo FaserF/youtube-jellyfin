@@ -48,10 +48,10 @@ public class YouTubeSeasonProvider : IRemoteMetadataProvider<Season, SeasonInfo>
             Name = !string.IsNullOrWhiteSpace(info.Name) ? info.Name : $"Season {info.IndexNumber ?? 1}"
         };
 
-        if (!string.IsNullOrWhiteSpace(playlistId))
-        {
-            YouTubeIdKeys.SetPlaylistId(season, playlistId);
-        }
+        var uniqueSeasonKey = !string.IsNullOrWhiteSpace(playlistId)
+            ? playlistId
+            : $"{channelId ?? Path.GetFileName(Path.GetDirectoryName(info.Path) ?? "YT")}_S{info.IndexNumber ?? 1:D2}";
+        YouTubeIdKeys.SetPlaylistId(season, uniqueSeasonKey);
 
         result.Item = season;
         result.HasMetadata = true;

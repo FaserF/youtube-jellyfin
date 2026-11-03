@@ -230,6 +230,44 @@ public class YouTubePluginController : ControllerBase
         return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
     }
 
+    [HttpGet("stream/{videoId}/subtitles/{lang}.vtt")]
+    [AllowAnonymous]
+    [Produces("text/vtt")]
+    public async Task<ActionResult> GetSubtitleVtt(
+        [FromRoute] string videoId,
+        [FromRoute] string lang,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanId = CleanVideoId(videoId);
+        using var client = CreateClient();
+        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        if (info == null || info.Subtitles == null || info.Subtitles.Count == 0)
+        {
+            return Content("WEBVTT\n\n", "text/vtt; charset=utf-8");
+        }
+
+        if (!info.Subtitles.TryGetValue(lang, out var subUrl))
+        {
+            subUrl = info.Subtitles.FirstOrDefault(k => k.Key.StartsWith(lang, StringComparison.OrdinalIgnoreCase)).Value
+                     ?? info.Subtitles.Values.FirstOrDefault();
+        }
+
+        if (string.IsNullOrWhiteSpace(subUrl))
+        {
+            return Content("WEBVTT\n\n", "text/vtt; charset=utf-8");
+        }
+
+        try
+        {
+            var rawSub = await client.HttpClient.GetStringAsync(subUrl, cancellationToken).ConfigureAwait(false);
+            return Content(rawSub, "text/vtt; charset=utf-8");
+        }
+        catch
+        {
+            return Content("WEBVTT\n\n", "text/vtt; charset=utf-8");
+        }
+    }
+
     [HttpGet("proxy")]
     [HttpGet("proxy/{filename}")]
     [AllowAnonymous]
@@ -259,11 +297,7 @@ public class YouTubePluginController : ControllerBase
         }
 
         using var client = CreateClient();
-        if (!targetUrl.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
-            !targetUrl.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
-            (targetUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
-             targetUrl.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) ||
-             targetUrl.Contains("hls_variant", StringComparison.OrdinalIgnoreCase)))
+        if (IsM3u8PlaylistUrl(targetUrl))
         {
             var rawM3u8 = await client.HttpClient.GetStringAsync(targetUrl, cancellationToken).ConfigureAwait(false);
             var rewritten = RewriteM3u8Urls(rawM3u8, targetUrl);
@@ -295,10 +329,41 @@ public class YouTubePluginController : ControllerBase
         }
 
         Response.Headers["Accept-Ranges"] = "bytes";
-        Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t";
+        var isVtt = targetUrl.Contains("timedtext", StringComparison.OrdinalIgnoreCase) ||
+                    targetUrl.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase);
+        Response.ContentType = isVtt
+            ? "text/vtt; charset=utf-8"
+            : (resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t");
         await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
         return new EmptyResult();
+    }
+
+    private static bool IsM3u8PlaylistUrl(string url) =>
+        !url.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
+        !url.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
+        !url.Contains("/api/timedtext", StringComparison.OrdinalIgnoreCase) &&
+        !url.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase) &&
+        (url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+         url.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) ||
+         url.Contains("hls_variant", StringComparison.OrdinalIgnoreCase) ||
+         url.Contains("timedtext_playlist", StringComparison.OrdinalIgnoreCase));
+
+    private static string GetProxyExtensionForUrl(string url)
+    {
+        if (IsM3u8PlaylistUrl(url))
+        {
+            return "index.m3u8";
+        }
+
+        if (url.Contains("/api/timedtext", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "sub.vtt";
+        }
+
+        return "seg.ts";
     }
 
     private static string RewriteM3u8Urls(string m3u8Content, string baseUrl)
@@ -318,15 +383,25 @@ public class YouTubePluginController : ControllerBase
 
             if (line.StartsWith('#'))
             {
+                // Strip HLS SUBTITLES tracks from master manifest so FFmpeg remux (-codec copy -map -0:s)
+                // never attempts to open WebVTT subtitle playlists as MPEG-TS inputs
+                if (line.StartsWith("#EXT-X-MEDIA:", StringComparison.OrdinalIgnoreCase) &&
+                    line.Contains("TYPE=SUBTITLES", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+                {
+                    line = System.Text.RegularExpressions.Regex.Replace(line, @",SUBTITLES=""[^""]*""", string.Empty);
+                }
+
                 // Rewrite URI="..." inside #EXT-X-MEDIA or #EXT-X-MAP tags
                 var uriUpdated = System.Text.RegularExpressions.Regex.Replace(line, @"URI=""([^""]+)""", m =>
                 {
                     var abs = new Uri(baseUri, m.Groups[1].Value).ToString();
                     var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
-                    var isPlaylist = !abs.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
-                                     !abs.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
-                                     (abs.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_variant", StringComparison.OrdinalIgnoreCase));
-                    var ext = isPlaylist ? "index.m3u8" : "seg.ts";
+                    var ext = GetProxyExtensionForUrl(abs);
                     return $"URI=\"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
                 });
                 sb.AppendLine(uriUpdated);
@@ -335,10 +410,7 @@ public class YouTubePluginController : ControllerBase
             {
                 var abs = new Uri(baseUri, line).ToString();
                 var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
-                var isPlaylist = !abs.Contains("seg.ts", StringComparison.OrdinalIgnoreCase) &&
-                                 !abs.Contains("/videoplayback/", StringComparison.OrdinalIgnoreCase) &&
-                                 (abs.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) || abs.Contains("hls_variant", StringComparison.OrdinalIgnoreCase));
-                var ext = isPlaylist ? "index.m3u8" : "seg.ts";
+                var ext = GetProxyExtensionForUrl(abs);
                 sb.AppendLine($"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
             }
         }
@@ -425,11 +497,14 @@ public class YouTubePluginController : ControllerBase
 
     [HttpPost("library/sync")]
     [AllowAnonymous]
-    public async Task<ActionResult> SyncLibrary(CancellationToken cancellationToken)
+    public async Task<ActionResult> SyncLibrary(
+        [FromServices] Services.YouTubePlaylistAndCollectionSyncService playlistSyncService,
+        CancellationToken cancellationToken)
     {
         using var client = CreateClient();
         var count = await ScheduledTasks.SyncYouTubeStrmTask.PerformSyncAsync(client, Config, _logger, cancellationToken).ConfigureAwait(false);
         _libraryManager.QueueLibraryScan();
+        _ = Task.Run(() => playlistSyncService.SyncAllAsync(CancellationToken.None));
         return Ok(new { success = true, videosSynced = count });
     }
 

@@ -56,7 +56,7 @@ public class YouTubeSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
         return results;
     }
 
-    public async Task<MetadataResult<Series>> GetMetadata(SeriesInfo info, CancellationToken cancellationToken)
+    public Task<MetadataResult<Series>> GetMetadata(SeriesInfo info, CancellationToken cancellationToken)
     {
         var result = new MetadataResult<Series>();
         var channelId = YouTubeIdKeys.GetChannelId(info.ProviderIds)
@@ -64,33 +64,31 @@ public class YouTubeSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
 
         if (string.IsNullOrWhiteSpace(channelId))
         {
-            if (!string.IsNullOrWhiteSpace(info.Path) && info.Path.Contains("/youtube/", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(info.Path) && info.Path.Contains("/youtube", StringComparison.OrdinalIgnoreCase))
             {
+                var folderKey = Path.GetFileName(info.Path.TrimEnd('/', '\\'));
                 var feedSeries = new Series
                 {
                     Name = info.Name,
-                    Overview = $"YouTube SmartTube Feed: {info.Name}"
+                    Overview = $"YouTube SmartTube Feed: {info.Name}",
+                    ProductionYear = DateTime.UtcNow.Year
                 };
                 feedSeries.AddStudio("YouTube");
                 feedSeries.AddGenre("YouTube");
+                YouTubeIdKeys.SetChannelId(feedSeries, $"FEED_{folderKey}");
                 result.Item = feedSeries;
                 result.HasMetadata = true;
             }
 
-            return result;
+            return Task.FromResult(result);
         }
 
-        using var client = CreateClient();
-        var ch = await client.GetChannelMetadataAsync(channelId, cancellationToken).ConfigureAwait(false);
-        if (ch == null)
-        {
-            return result;
-        }
-
+        var cleanTitle = CleanFolderDisplayName(info.Name);
         var series = new Series
         {
-            Name = !string.IsNullOrWhiteSpace(ch.Title) ? ch.Title : info.Name,
-            Overview = ch.Description
+            Name = cleanTitle,
+            Overview = $"YouTube Channel: {cleanTitle} (https://www.youtube.com/channel/{channelId})",
+            ProductionYear = DateTime.UtcNow.Year
         };
         series.AddStudio("YouTube");
         series.AddGenre("YouTube");
@@ -98,7 +96,18 @@ public class YouTubeSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
 
         result.Item = series;
         result.HasMetadata = true;
-        return result;
+        return Task.FromResult(result);
+    }
+
+    private static string CleanFolderDisplayName(string? rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return "YouTube Channel";
+        }
+
+        var idx = rawName.IndexOf("[YouTubeChannel-", StringComparison.OrdinalIgnoreCase);
+        return idx > 0 ? rawName[..idx].Trim() : rawName.Trim();
     }
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken) =>

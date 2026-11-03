@@ -15,6 +15,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddHttpClient("YouTube");
         serviceCollection.AddHostedService<YouTubeStartupService>();
+        serviceCollection.AddSingleton<YouTubePlaylistAndCollectionSyncService>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<YouTubePlaylistAndCollectionSyncService>());
         serviceCollection.AddSingleton<IChannel, YouTubeChannel>();
         serviceCollection.AddSingleton<IMediaSourceProvider, YouTubeMediaSourceProvider>();
     }

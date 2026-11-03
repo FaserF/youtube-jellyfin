@@ -81,6 +81,8 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     BitRate = 8000000,
                     Title = $"{height}p Ad-Free (YouTube)",
                     AspectRatio = "16:9",
+                    AverageFrameRate = 30f,
+                    RealFrameRate = 30f,
                     IsDefault = true
                 },
                 new()
@@ -88,6 +90,9 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     Type = MediaStreamType.Audio,
                     Index = 1,
                     Codec = "aac",
+                    Channels = 2,
+                    SampleRate = 44100,
+                    BitRate = 128000,
                     Language = "und",
                     Title = "YouTube Audio",
                     IsDefault = true
@@ -99,6 +104,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 var subIdx = 2;
                 foreach (var kv in streamInfo.Subtitles)
                 {
+                    var subUrl = $"/api/youtubePlugin/stream/{videoId}/subtitles/{Uri.EscapeDataString(kv.Key)}.vtt";
                     streams.Add(new MediaStream
                     {
                         Type = MediaStreamType.Subtitle,
@@ -107,9 +113,10 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                         Title = $"YouTube ({kv.Key})",
                         Codec = "vtt",
                         IsExternal = true,
-                        IsExternalUrl = true,
-                        Path = kv.Value,
-                        DeliveryUrl = kv.Value
+                        IsExternalUrl = false,
+                        DeliveryMethod = MediaBrowser.Model.Dlna.SubtitleDeliveryMethod.External,
+                        Path = subUrl,
+                        DeliveryUrl = subUrl
                     });
                 }
             }
@@ -124,6 +131,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 SupportsDirectPlay = true,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
+                SupportsProbing = false,
                 RunTimeTicks = streamInfo?.DurationSeconds > 0 ? TimeSpan.FromSeconds(streamInfo.DurationSeconds).Ticks : item.RunTimeTicks,
                 MediaStreams = streams
             };

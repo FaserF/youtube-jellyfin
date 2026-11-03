@@ -44,12 +44,12 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
         };
     }
 
-    public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
+    public Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
     {
         var list = new List<RemoteImageInfo>();
         if (!Config.FetchThumbnails)
         {
-            return list;
+            return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
         }
 
         if (item is Episode or Movie)
@@ -62,12 +62,6 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                 {
                     ProviderName = Name,
                     Type = ImageType.Primary,
-                    Url = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg"
-                });
-                list.Add(new RemoteImageInfo
-                {
-                    ProviderName = Name,
-                    Type = ImageType.Primary,
                     Url = $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg"
                 });
                 if (item is Movie)
@@ -76,50 +70,47 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                     {
                         ProviderName = Name,
                         Type = ImageType.Backdrop,
-                        Url = $"https://i.ytimg.com/vi/{videoId}/maxresdefault.jpg"
+                        Url = $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg"
                     });
                 }
             }
 
-            return list;
+            return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
         }
 
-        var channelId = YouTubeIdKeys.GetChannelId(item.ProviderIds)
-            ?? YouTubeIdKeys.ExtractChannelIdFromPath(item.Path);
-        if (string.IsNullOrWhiteSpace(channelId) && item is Season season && season.Series != null)
+        // For Series / Season: use the first video's thumbnail in the folder immediately (zero API quota, 100% reliable)
+        if (!string.IsNullOrWhiteSpace(item.Path) && Directory.Exists(item.Path))
         {
-            channelId = YouTubeIdKeys.GetChannelId(season.Series.ProviderIds);
-        }
-
-        if (!string.IsNullOrWhiteSpace(channelId))
-        {
-            using var client = CreateClient();
-            var ch = await client.GetChannelMetadataAsync(channelId, cancellationToken).ConfigureAwait(false);
-            if (ch != null)
+            try
             {
-                if (!string.IsNullOrWhiteSpace(ch.ThumbnailUrl))
+                var firstStrm = Directory.EnumerateFiles(item.Path, "*.strm", SearchOption.AllDirectories).FirstOrDefault();
+                var vid = YouTubeIdKeys.ExtractVideoIdFromPath(firstStrm);
+                if (!string.IsNullOrWhiteSpace(vid))
                 {
                     list.Add(new RemoteImageInfo
                     {
                         ProviderName = Name,
                         Type = ImageType.Primary,
-                        Url = ch.ThumbnailUrl
+                        Url = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
                     });
-                }
-
-                if (!string.IsNullOrWhiteSpace(ch.BannerUrl) && item is Series)
-                {
-                    list.Add(new RemoteImageInfo
+                    if (item is Series)
                     {
-                        ProviderName = Name,
-                        Type = ImageType.Backdrop,
-                        Url = ch.BannerUrl
-                    });
+                        list.Add(new RemoteImageInfo
+                        {
+                            ProviderName = Name,
+                            Type = ImageType.Backdrop,
+                            Url = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                        });
+                    }
                 }
+            }
+            catch
+            {
+                // Ignore directory scan errors
             }
         }
 
-        return list;
+        return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
     }
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken) =>

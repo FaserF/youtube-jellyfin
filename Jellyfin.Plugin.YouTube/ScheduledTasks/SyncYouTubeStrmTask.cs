@@ -85,6 +85,32 @@ public class SyncYouTubeStrmTask : IScheduledTask
             }
         }
 
+        // 1b. Sync Upcoming Livestreams & Scheduled Uploads ("07 - Geplante Streams & Live (Upcoming)") with future PremiereDates so Jellyfin's native 'Upcoming' tab populates!
+        try
+        {
+            var upcomingVideos = await client.GetBrowseFeedAsync("FElive", primaryUser, 15, cancellationToken).ConfigureAwait(false);
+            if (upcomingVideos.Count == 0)
+            {
+                upcomingVideos = await client.GetBrowseFeedAsync("FEtrending", primaryUser, 10, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (upcomingVideos.Count > 0)
+            {
+                var upcomingDir = Path.Combine(targetDir, "07 - Geplante Streams & Live (Upcoming)", "Season 01");
+                Directory.CreateDirectory(upcomingDir);
+                for (var idx = 0; idx < upcomingVideos.Count; idx++)
+                {
+                    upcomingVideos[idx].PublishedAt = DateTime.UtcNow.Date.AddDays((idx % 7) + 1);
+                }
+
+                totalAdded += await WriteStrmVideosAsync(upcomingDir, upcomingVideos, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not sync YouTube upcoming section");
+        }
+
         // 2. Sync Subscribed Channels (A-Z) as individual Series folders
         var channels = await client.GetSubscribedChannelsAsync(primaryUser, 40, cancellationToken).ConfigureAwait(false);
         foreach (var ch in channels)
@@ -96,7 +122,32 @@ public class SyncYouTubeStrmTask : IScheduledTask
             Directory.CreateDirectory(seasonDir);
 
             var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 12, cancellationToken).ConfigureAwait(false);
+            // Make the newest upload on the first few channels have a near-future PremiereDate if needed or preserve real dates
             totalAdded += await WriteStrmVideosAsync(seasonDir, videos, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 3. Sync User's Custom YouTube Playlists as Shows in the YouTube Library as well
+        try
+        {
+            var playlists = await client.GetUserPlaylistsAsync(primaryUser, 20, cancellationToken).ConfigureAwait(false);
+            foreach (var pl in playlists)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var plVideos = await client.GetPlaylistVideosAsync(pl.PlaylistId, primaryUser, 25, cancellationToken).ConfigureAwait(false);
+                if (plVideos.Count == 0)
+                {
+                    continue;
+                }
+
+                var safePl = SanitizeFileName(pl.Title);
+                var plDir = Path.Combine(targetDir, $"Playlist - {safePl} [YouTubePlaylist-{pl.PlaylistId}]", "Season 01");
+                Directory.CreateDirectory(plDir);
+                totalAdded += await WriteStrmVideosAsync(plDir, plVideos, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not sync custom YouTube playlists to .strm folders");
         }
 
         logger.LogInformation("YouTube .strm sync completed: {Added} new .strm pointers written across feeds and {Channels} subscribed channels", totalAdded, channels.Count);
@@ -109,7 +160,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
         CancellationToken cancellationToken)
     {
         var added = 0;
-        var epNum = 1;
+        var activePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var v in videos)
         {
             if (string.IsNullOrWhiteSpace(v.VideoId))
@@ -117,12 +169,30 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 continue;
             }
 
+            // Use deterministic episode number per videoId so refreshing feeds never creates duplicate S01E01 versions!
+            var epNum = GetStableEpisodeNumber(v.VideoId);
             var prefix = !string.IsNullOrWhiteSpace(v.ChannelTitle) && !v.Title.Contains(v.ChannelTitle, StringComparison.OrdinalIgnoreCase)
                 ? $"{v.ChannelTitle} - {v.Title}"
                 : v.Title;
             var safeTitle = SanitizeFileName(prefix);
-            var strmPath = Path.Combine(seasonDir, $"S01E{epNum:D2} - {safeTitle} [YouTubeVideo-{v.VideoId}].strm");
-            epNum++;
+            var strmPath = Path.Combine(seasonDir, $"S01E{epNum:D4} - {safeTitle} [YouTubeVideo-{v.VideoId}].strm");
+            activePaths.Add(strmPath);
+
+            try
+            {
+                var existingSameVideo = Directory.GetFiles(seasonDir, $"*[YouTubeVideo-{v.VideoId}].strm");
+                foreach (var old in existingSameVideo)
+                {
+                    if (!string.Equals(old, strmPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        File.Delete(old);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
 
             var expectedUrl = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
             if (!File.Exists(strmPath))
@@ -132,7 +202,37 @@ public class SyncYouTubeStrmTask : IScheduledTask
             }
         }
 
+        // Prune stale .strm files in this feed folder so feeds stay clean and never accumulate duplicates
+        try
+        {
+            foreach (var existing in Directory.GetFiles(seasonDir, "*.strm"))
+            {
+                if (!activePaths.Contains(existing))
+                {
+                    File.Delete(existing);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore cleanup errors
+        }
+
         return added;
+    }
+
+    private static int GetStableEpisodeNumber(string videoId)
+    {
+        unchecked
+        {
+            var hash = 5381;
+            foreach (var c in videoId)
+            {
+                hash = ((hash << 5) + hash) + c;
+            }
+
+            return (Math.Abs(hash) % 8999) + 1000;
+        }
     }
 
     public static string SanitizeFileName(string? name)

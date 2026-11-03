@@ -185,8 +185,19 @@ public class YouTubeStartupService : IHostedService
             EnsureLibraryArtwork(config.StrmLibraryPath);
 
             var vfs = _libraryManager.GetVirtualFolders();
-            var exists = vfs.Any(v => string.Equals(v.Name, "YouTube", StringComparison.OrdinalIgnoreCase));
-            if (!exists)
+            var existingVf = vfs.FirstOrDefault(v => string.Equals(v.Name, "YouTube", StringComparison.OrdinalIgnoreCase));
+            var needsRecreate = existingVf == null ||
+                                existingVf.LibraryOptions == null ||
+                                existingVf.LibraryOptions.EnableAutomaticSeriesGrouping ||
+                                (existingVf.Locations != null && existingVf.Locations.Length > 1);
+
+            if (existingVf != null && needsRecreate)
+            {
+                await _libraryManager.RemoveVirtualFolder("YouTube", false).ConfigureAwait(false);
+                existingVf = null;
+            }
+
+            if (existingVf == null)
             {
 #pragma warning disable CS0618
                 var libraryOptions = new LibraryOptions
@@ -197,7 +208,7 @@ public class YouTubeStartupService : IHostedService
                     EnablePhotos = false,
                     EnableTrickplayImageExtraction = false,
                     ExtractChapterImagesDuringLibraryScan = false,
-                    EnableAutomaticSeriesGrouping = true,
+                    EnableAutomaticSeriesGrouping = false,
                     PathInfos = new[] { new MediaPathInfo { Path = config.StrmLibraryPath } },
                     TypeOptions = new[]
                     {
@@ -229,7 +240,7 @@ public class YouTubeStartupService : IHostedService
                 };
 #pragma warning restore CS0618
 
-                await _libraryManager.AddVirtualFolder("YouTube", CollectionTypeOptions.tvshows, libraryOptions, false).ConfigureAwait(false);
+                await _libraryManager.AddVirtualFolder("YouTube", CollectionTypeOptions.tvshows, libraryOptions, true).ConfigureAwait(false);
                 _logger.LogInformation("Created native YouTube media library pointing to {Path}", config.StrmLibraryPath);
                 _libraryManager.QueueLibraryScan();
             }

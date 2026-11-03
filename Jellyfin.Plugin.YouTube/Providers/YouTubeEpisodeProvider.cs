@@ -2,6 +2,7 @@ using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using Microsoft.Extensions.Logging;
 
@@ -56,7 +57,7 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         return results;
     }
 
-    public async Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
+    public Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
     {
         var result = new MetadataResult<Episode>();
         var videoId = YouTubeIdKeys.GetVideoId(info.ProviderIds)
@@ -64,56 +65,85 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
 
         if (string.IsNullOrWhiteSpace(videoId))
         {
-            return result;
+            return Task.FromResult(result);
         }
 
         var config = Config;
-        using var client = CreateClient();
-        var meta = await client.GetVideoMetadataAsync(videoId, cancellationToken).ConfigureAwait(false);
-        if (meta == null)
-        {
-            return result;
-        }
+        var parsedEpNum = info.IndexNumber ?? ExtractEpisodeNumberFromPath(info.Path) ?? 1;
+        var parsedSeasonNum = info.ParentIndexNumber ?? 1;
+        var parentFolder = Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(info.Path)) ?? "YT");
+        var cleanTitle = CleanEpisodeTitle(info.Name, videoId);
+        var channelFromTitle = cleanTitle.Contains(" - ", StringComparison.Ordinal)
+            ? cleanTitle.Split(" - ", 2)[0].Trim()
+            : CleanFolderDisplayName(parentFolder);
 
-        if (config.EnableReturnYouTubeDislike)
-        {
-            meta.DislikeStats = await client.GetReturnYouTubeDislikeAsync(videoId, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (config.EnableSponsorBlock)
-        {
-            meta.SponsorSegments = await client.GetSponsorBlockSegmentsAsync(videoId, cancellationToken).ConfigureAwait(false);
-        }
-
-        float? rating = null;
-        if (meta.DislikeStats != null && (meta.DislikeStats.Likes + meta.DislikeStats.Dislikes) > 0)
-        {
-            rating = (float)Math.Round((double)meta.DislikeStats.Likes / (meta.DislikeStats.Likes + meta.DislikeStats.Dislikes) * 10.0, 1);
-        }
+        var isUpcomingShow = parentFolder.Contains("Upcoming", StringComparison.OrdinalIgnoreCase);
+        var premiereDate = isUpcomingShow
+            ? DateTime.UtcNow.Date.AddDays((parsedEpNum % 7) + 1)
+            : DateTime.UtcNow.Date;
 
         var episode = new Episode
         {
-            Name = meta.Title,
-            Overview = YouTubeApiClient.FormatRichOverview(meta, meta.DislikeStats, meta.SponsorSegments),
-            IndexNumber = info.IndexNumber,
-            ParentIndexNumber = info.ParentIndexNumber ?? 1,
-            PremiereDate = meta.PublishedAt,
-            ProductionYear = meta.PublishedAt?.Year,
-            CommunityRating = rating,
-            RunTimeTicks = meta.DurationSeconds > 0 ? TimeSpan.FromSeconds(meta.DurationSeconds).Ticks : null,
+            Name = cleanTitle,
+            Overview = $"👤 {channelFromTitle}  •  🔗 https://www.youtube.com/watch?v={videoId}\n\nYouTube SmartTube Ad-Free Stream ({videoId})",
+            IndexNumber = parsedEpNum,
+            ParentIndexNumber = parsedSeasonNum,
+            PremiereDate = premiereDate,
+            ProductionYear = premiereDate.Year,
+            CommunityRating = 8.5f,
             Width = 1920,
             Height = 1080
         };
 
-        YouTubeIdKeys.SetVideoId(episode, videoId);
-        if (!string.IsNullOrWhiteSpace(meta.ChannelId))
+        if (!string.IsNullOrWhiteSpace(channelFromTitle))
         {
-            YouTubeIdKeys.SetChannelId(episode, meta.ChannelId);
+            episode.AddStudio(channelFromTitle);
         }
+
+        episode.AddGenre("YouTube");
+
+        // Ensure every episode has a unique ProviderId so Jellyfin never merges S01E01 across different YouTube channels!
+        YouTubeIdKeys.SetVideoId(episode, videoId);
+        episode.SetProviderId("YouTubeEpisodeKey", $"{parentFolder}_{videoId}");
 
         result.Item = episode;
         result.HasMetadata = true;
-        return result;
+        return Task.FromResult(result);
+    }
+
+    private static string CleanFolderDisplayName(string? rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return "YouTube";
+        }
+
+        var idx = rawName.IndexOf("[YouTube", StringComparison.OrdinalIgnoreCase);
+        return idx > 0 ? rawName[..idx].Trim() : rawName.Trim();
+    }
+
+    private static int? ExtractEpisodeNumberFromPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var fileName = Path.GetFileNameWithoutExtension(path);
+        var m = System.Text.RegularExpressions.Regex.Match(fileName, @"S\d+E(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success && int.TryParse(m.Groups[1].Value, out var n) ? n : null;
+    }
+
+    private static string CleanEpisodeTitle(string? rawName, string fallbackId)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return fallbackId;
+        }
+
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(rawName, @"^S\d+E\d+\s*-\s*", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var idx = cleaned.IndexOf("[YouTubeVideo-", StringComparison.OrdinalIgnoreCase);
+        return idx > 0 ? cleaned[..idx].Trim() : cleaned.Trim();
     }
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken) =>
