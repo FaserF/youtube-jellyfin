@@ -143,6 +143,18 @@ public class SyncYouTubeWatchHistoryTask : IScheduledTask
                             modified = true;
                         }
                     }
+                    else if (candidate.Path != null &&
+                             (candidate.Path.Contains("01 - Home", StringComparison.OrdinalIgnoreCase) ||
+                              candidate.Path.Contains("03 - Weiteransehen", StringComparison.OrdinalIgnoreCase)) &&
+                             !userData.Played && userData.PlaybackPositionTicks == 0)
+                    {
+                        // Seed a minimal resume state (5s) for items in Home and Continue Watching
+                        // so Jellyfin's NextUp / Continue Watching engine immediately populates suggestions for the user!
+                        userData.Played = false;
+                        userData.PlaybackPositionTicks = TimeSpan.FromSeconds(5).Ticks;
+                        userData.LastPlayedDate = DateTime.UtcNow;
+                        modified = true;
+                    }
 
                     if (modified)
                     {

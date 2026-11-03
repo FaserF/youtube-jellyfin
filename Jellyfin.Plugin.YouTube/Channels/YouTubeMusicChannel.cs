@@ -214,10 +214,22 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
 
                 break;
             case "ytm_liked":
-                musicTracks = await client.GetBrowseFeedAsync("VLLV", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                musicTracks = await client.GetBrowseFeedAsync("VLLM", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                if (musicTracks.Count == 0)
+                {
+                    musicTracks = await client.GetBrowseFeedAsync("VLLV", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                }
+
+                musicTracks = musicTracks.Where(IsLikelyMusicItem).ToList();
                 break;
             case "ytm_history":
-                musicTracks = await client.GetBrowseFeedAsync("FEhistory", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                musicTracks = await client.GetBrowseFeedAsync("FEmusic_history", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                if (musicTracks.Count == 0)
+                {
+                    musicTracks = await client.GetBrowseFeedAsync("FEhistory", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
+                }
+
+                musicTracks = musicTracks.Where(IsLikelyMusicItem).ToList();
                 break;
             case "ytm_charts":
                 musicTracks = await client.GetBrowseFeedAsync("FEmusic", effectiveUserKey, limit, cancellationToken).ConfigureAwait(false);
@@ -282,6 +294,42 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         return list;
     }
 
+    public static bool IsLikelyMusicItem(YouTubeVideoItem v)
+    {
+        if (string.IsNullOrWhiteSpace(v.Title))
+        {
+            return false;
+        }
+
+        var channel = v.ChannelTitle ?? string.Empty;
+        if (channel.EndsWith(" - Topic", StringComparison.OrdinalIgnoreCase) ||
+            channel.EndsWith("VEVO", StringComparison.OrdinalIgnoreCase) ||
+            channel.Contains("Records", StringComparison.OrdinalIgnoreCase) ||
+            channel.Contains("Music", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (v.Title.Contains(" - ") || v.Title.Contains(" – ") || v.Title.Contains(" — "))
+        {
+            return true;
+        }
+
+        if (v.Title.Contains("Official Audio", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("Official Music Video", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("Official Video", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("Remix", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("Feat.", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("ft.", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("prod.", StringComparison.OrdinalIgnoreCase) ||
+            v.Title.Contains("Lyric Video", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public async Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
     {
         var videoId = id.StartsWith("ytm_", StringComparison.Ordinal) ? id["ytm_".Length..] : id;
@@ -294,12 +342,13 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
 
         var config = Config;
         var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
+        var serverUrl = config.GetPublicServerUrl();
 
         var source = new MediaSourceInfo
         {
             Id = videoId,
             Name = $"{streamInfo.Title} (YouTube Music HQ Audio)",
-            Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/audio.m4a",
+            Path = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
             Protocol = MediaProtocol.Http,
             Container = "m4a",
             SupportsDirectPlay = true,

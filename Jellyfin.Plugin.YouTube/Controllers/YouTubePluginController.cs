@@ -333,7 +333,14 @@ public class YouTubePluginController : ControllerBase
         using var client = CreateClient();
         if (IsM3u8PlaylistUrl(targetUrl))
         {
-            var rawM3u8 = await client.HttpClient.GetStringAsync(targetUrl, cancellationToken).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+            using var resp = await client.HttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return await ProxyRemoteUrlInternalAsync(client, targetUrl, cancellationToken).ConfigureAwait(false);
+            }
+
+            var rawM3u8 = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var rewritten = RewriteM3u8Urls(rawM3u8, targetUrl);
             return Content(rewritten, "application/vnd.apple.mpegurl; charset=utf-8");
         }
@@ -404,11 +411,12 @@ public class YouTubePluginController : ControllerBase
         return "seg.ts";
     }
 
-    private static string RewriteM3u8Urls(string m3u8Content, string baseUrl)
+    private string RewriteM3u8Urls(string m3u8Content, string baseUrl)
     {
         var baseUri = new Uri(baseUrl);
         var sb = new StringBuilder();
         var lines = m3u8Content.Split('\n');
+        var serverUrl = Config.GetPublicServerUrl(Request.Scheme, Request.Host.Value);
 
         foreach (var rawLine in lines)
         {
@@ -440,7 +448,7 @@ public class YouTubePluginController : ControllerBase
                     var abs = new Uri(baseUri, m.Groups[1].Value).ToString();
                     var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
                     var ext = GetProxyExtensionForUrl(abs);
-                    return $"URI=\"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
+                    return $"URI=\"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
                 });
                 sb.AppendLine(uriUpdated);
             }
@@ -449,7 +457,7 @@ public class YouTubePluginController : ControllerBase
                 var abs = new Uri(baseUri, line).ToString();
                 var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
                 var ext = GetProxyExtensionForUrl(abs);
-                sb.AppendLine($"http://127.0.0.1:8096/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
+                sb.AppendLine($"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
             }
         }
 

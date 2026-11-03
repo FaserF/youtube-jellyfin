@@ -27,6 +27,7 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableYouTubeMusicPlaylistsSync = true;
         YouTubeMusicMaxItemsPerFeed = 25;
         YouTubeMusicPreferredBitrate = 256;
+        PublicServerUrl = "https://jellyfin.tailnet.fabiseitz.de";
         YouTubeMusicLibraryPath = "/data/youtube-music";
         FetchThumbnails = true;
         StrmLibraryPath = "/data/youtube";
@@ -63,6 +64,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public int YouTubeMusicMaxItemsPerFeed { get; set; }
     public int YouTubeMusicPreferredBitrate { get; set; }
     public string YouTubeMusicLibraryPath { get; set; }
+    public string PublicServerUrl { get; set; }
     public bool FetchThumbnails { get; set; }
     public string StrmLibraryPath { get; set; }
     public string ProxyUrl { get; set; }
@@ -123,6 +125,27 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public static string NormalizeId(string? raw) =>
         string.IsNullOrWhiteSpace(raw) ? string.Empty : raw.Replace("-", string.Empty, StringComparison.Ordinal).Trim();
+
+    public string GetPublicServerUrl(string? requestScheme = null, string? requestHost = null)
+    {
+        if (!string.IsNullOrWhiteSpace(requestScheme) && !string.IsNullOrWhiteSpace(requestHost))
+        {
+            return $"{requestScheme}://{requestHost}".TrimEnd('/');
+        }
+
+        if (!string.IsNullOrWhiteSpace(PublicServerUrl))
+        {
+            return PublicServerUrl.TrimEnd('/');
+        }
+
+        var published = Environment.GetEnvironmentVariable("JELLYFIN_PublishedServerUrl");
+        if (!string.IsNullOrWhiteSpace(published))
+        {
+            return published.TrimEnd('/');
+        }
+
+        return "https://jellyfin.tailnet.fabiseitz.de";
+    }
 }
 
 public class YouTubeUserAccountEntry

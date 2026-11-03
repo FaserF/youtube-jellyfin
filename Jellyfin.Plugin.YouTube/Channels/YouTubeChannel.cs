@@ -412,6 +412,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             return Array.Empty<MediaSourceInfo>();
         }
 
+        var serverUrl = Config.GetPublicServerUrl();
         if (isAudio)
         {
             var bitrate = (Config.YouTubeMusicPreferredBitrate > 0 ? Config.YouTubeMusicPreferredBitrate : 256) * 1000;
@@ -421,7 +422,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                 {
                     Id = videoId,
                     Name = $"{streamInfo.Title} (YouTube Music HQ Audio)",
-                    Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/audio.m4a",
+                    Path = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
                     Protocol = MediaProtocol.Http,
                     Container = "m4a",
                     SupportsDirectPlay = true,
@@ -485,7 +486,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             });
         }
 
-        var proxyPlayUrl = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/master.m3u8";
+        var proxyPlayUrl = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
 
         var source = new MediaSourceInfo
         {

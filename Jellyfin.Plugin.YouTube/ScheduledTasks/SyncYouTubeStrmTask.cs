@@ -77,7 +77,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
 
                 var seasonDir = Path.Combine(targetDir, folderName, "Season 01");
                 Directory.CreateDirectory(seasonDir);
-                totalAdded += await WriteStrmVideosAsync(seasonDir, feedVideos, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(seasonDir, feedVideos, config, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -103,7 +103,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                     upcomingVideos[idx].PublishedAt = DateTime.UtcNow.Date.AddDays((idx % 7) + 1);
                 }
 
-                totalAdded += await WriteStrmVideosAsync(upcomingDir, upcomingVideos, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(upcomingDir, upcomingVideos, config, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -123,7 +123,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
 
             var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 12, cancellationToken).ConfigureAwait(false);
             // Make the newest upload on the first few channels have a near-future PremiereDate if needed or preserve real dates
-            totalAdded += await WriteStrmVideosAsync(seasonDir, videos, cancellationToken).ConfigureAwait(false);
+            totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken).ConfigureAwait(false);
         }
 
         // 3. Sync User's Custom YouTube Playlists as Shows in the YouTube Library as well
@@ -142,7 +142,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 var safePl = SanitizeFileName(pl.Title);
                 var plDir = Path.Combine(targetDir, $"Playlist - {safePl} [YouTubePlaylist-{pl.PlaylistId}]", "Season 01");
                 Directory.CreateDirectory(plDir);
-                totalAdded += await WriteStrmVideosAsync(plDir, plVideos, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(plDir, plVideos, config, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -176,8 +176,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
         var musicSections = new (string BrowseId, string ArtistFolder, string AlbumFolder)[]
         {
             ("FEmusic", "01 - YouTube Music Supermix & Charts", "Supermix & Top Music"),
-            ("VLLV", "02 - Liked Songs & Favoriten", "Liked Songs"),
-            ("FEhistory", "03 - Listen Again & Verlauf", "Recently Played")
+            ("VLLM", "02 - Liked Songs & Favoriten", "Liked Songs"),
+            ("FEmusic_history", "03 - Listen Again & Verlauf", "Recently Played")
         };
 
         foreach (var (browseId, artistFolder, albumFolder) in musicSections)
@@ -198,7 +198,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
 
                 var albumDir = Path.Combine(musicRoot, artistFolder, albumFolder);
                 Directory.CreateDirectory(albumDir);
-                musicAdded += await WriteMusicStrmTracksAsync(albumDir, tracks, cancellationToken).ConfigureAwait(false);
+                musicAdded += await WriteMusicStrmTracksAsync(albumDir, tracks, config, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -223,7 +223,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                     var safePl = SanitizeFileName(pl.Title);
                     var albumDir = Path.Combine(musicRoot, "04 - Meine YouTube Music Playlists", $"{safePl} [YouTubePlaylist-{pl.PlaylistId}]");
                     Directory.CreateDirectory(albumDir);
-                    musicAdded += await WriteMusicStrmTracksAsync(albumDir, plTracks, cancellationToken).ConfigureAwait(false);
+                    musicAdded += await WriteMusicStrmTracksAsync(albumDir, plTracks, config, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -239,6 +239,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
     private static async Task<int> WriteMusicStrmTracksAsync(
         string albumDir,
         List<YouTubeVideoItem> tracks,
+        PluginConfiguration config,
         CancellationToken cancellationToken)
     {
         var added = 0;
@@ -246,7 +247,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
 
         foreach (var t in tracks)
         {
-            if (string.IsNullOrWhiteSpace(t.VideoId))
+            if (string.IsNullOrWhiteSpace(t.VideoId) || !Channels.YouTubeMusicChannel.IsLikelyMusicItem(t))
             {
                 continue;
             }
@@ -260,8 +261,9 @@ public class SyncYouTubeStrmTask : IScheduledTask
             var strmPath = Path.Combine(albumDir, $"{trackNum:D4} - {safeTitle} [YouTubeAudio-{t.VideoId}].strm");
             activePaths.Add(strmPath);
 
-            var expectedUrl = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
-            if (!File.Exists(strmPath))
+            var serverUrl = config.GetPublicServerUrl();
+            var expectedUrl = $"{serverUrl}/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
+            if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
                 added++;
@@ -289,6 +291,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
     private static async Task<int> WriteStrmVideosAsync(
         string seasonDir,
         List<YouTubeVideoItem> videos,
+        PluginConfiguration config,
         CancellationToken cancellationToken)
     {
         var added = 0;
@@ -326,8 +329,9 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 // Ignore cleanup errors
             }
 
-            var expectedUrl = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
-            if (!File.Exists(strmPath))
+            var serverUrl = config.GetPublicServerUrl();
+            var expectedUrl = $"{serverUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
+            if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
                 added++;

@@ -65,6 +65,9 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
 
         try
         {
+            var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+            var serverUrl = config.GetPublicServerUrl();
+
             using var client = new YouTubeApiClient(
                 _httpClientFactory.CreateClient("YouTube"),
                 _loggerFactory.CreateLogger<YouTubeApiClient>());
@@ -72,13 +75,12 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
             if (isAudioItem)
             {
-                var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
                 var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
                 var audioSource = new MediaSourceInfo
                 {
                     Id = item.Id.ToString("N"),
                     Name = $"{item.Name} (YouTube Music HQ)",
-                    Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/audio.m4a",
+                    Path = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
                     Protocol = MediaProtocol.Http,
                     Container = "m4a",
                     SupportsDirectPlay = true,
@@ -166,9 +168,9 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             {
                 Id = item.Id.ToString("N"),
                 Name = $"{item.Name} ({height}p Ad-Free)",
-                Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/master.m3u8",
+                Path = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8",
                 Protocol = MediaProtocol.Http,
-                Container = !string.IsNullOrWhiteSpace(streamInfo?.HlsManifestUrl) ? "hls" : "mp4",
+                Container = "m3u8",
                 SupportsDirectPlay = true,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
