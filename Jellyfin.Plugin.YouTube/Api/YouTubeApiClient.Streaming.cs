@@ -100,14 +100,23 @@ public partial class YouTubeApiClient
 
                     if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
                     {
+                        var audioTrackMap = new Dictionary<string, YouTubeAudioTrackDto>(StringComparer.OrdinalIgnoreCase);
+
                         foreach (var f in formats.EnumerateArray())
                         {
+                            var formatId = f.TryGetProperty("format_id", out var fidProp) ? fidProp.GetString() ?? string.Empty : string.Empty;
                             var url = f.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
                             var manifest = f.TryGetProperty("manifest_url", out var mProp) ? mProp.GetString() : null;
                             var vcodec = f.TryGetProperty("vcodec", out var vcProp) ? vcProp.GetString() ?? "none" : "none";
                             var acodec = f.TryGetProperty("acodec", out var acProp) ? acProp.GetString() ?? "none" : "none";
                             var height = f.TryGetProperty("height", out var hProp) && hProp.ValueKind == JsonValueKind.Number ? hProp.GetInt32() : 0;
                             var ext = f.TryGetProperty("ext", out var extProp) ? extProp.GetString() ?? string.Empty : string.Empty;
+                            var lang = f.TryGetProperty("language", out var lProp) ? lProp.GetString() : null;
+                            var formatNote = f.TryGetProperty("format_note", out var fnProp) ? fnProp.GetString() ?? string.Empty : string.Empty;
+                            var tbr = f.TryGetProperty("tbr", out var tbrProp) && tbrProp.ValueKind == JsonValueKind.Number ? (int)(tbrProp.GetDouble() * 1000) : 128000;
+                            var abr = f.TryGetProperty("abr", out var abrProp) && abrProp.ValueKind == JsonValueKind.Number ? (int)(abrProp.GetDouble() * 1000) : tbr;
+                            var sampleRate = f.TryGetProperty("asr", out var asrProp) && asrProp.ValueKind == JsonValueKind.Number ? asrProp.GetInt32() : 44100;
+                            var channels = f.TryGetProperty("audio_channels", out var chProp) && chProp.ValueKind == JsonValueKind.Number ? chProp.GetInt32() : 2;
 
                             if (!string.IsNullOrWhiteSpace(manifest) && manifest.Contains("hls_variant", StringComparison.OrdinalIgnoreCase))
                             {
@@ -130,37 +139,55 @@ public partial class YouTubeApiClient
                                     info.Height = height;
                                     info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
                                 }
-                                else if (vcodec == "none" && acodec != "none" && (ext == "m4a" || acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase)))
+                                else if (vcodec == "none" && acodec != "none")
                                 {
-                                    bestAudioOnlyUrl = url;
+                                    if (ext == "m4a" || acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        bestAudioOnlyUrl ??= url;
+                                    }
+
+                                    // Extract multi-audio track metadata (SmartTube multi-track parity)
+                                    var langKey = !string.IsNullOrWhiteSpace(lang) ? lang : "und";
+                                    var isOriginal = formatNote.Contains("original", StringComparison.OrdinalIgnoreCase);
+                                    var isDub = formatNote.Contains("dubbed", StringComparison.OrdinalIgnoreCase) ||
+                                                formatNote.Contains("dub", StringComparison.OrdinalIgnoreCase);
+
+                                    var trackTitle = !string.IsNullOrWhiteSpace(formatNote)
+                                        ? $"{formatNote} ({langKey})"
+                                        : (langKey != "und" ? langKey : "Audio");
+
+                                    // Pick highest bitrate track per language/dub variant
+                                    var trackKey = $"{langKey}_{isDub}_{formatNote}";
+                                    if (!audioTrackMap.TryGetValue(trackKey, out var existingTrack) || abr > existingTrack.Bitrate)
+                                    {
+                                        audioTrackMap[trackKey] = new YouTubeAudioTrackDto
+                                        {
+                                            FormatId = formatId,
+                                            Language = langKey,
+                                            Title = trackTitle,
+                                            Codec = acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) || ext == "m4a" ? "aac" : (acodec == "opus" ? "opus" : "aac"),
+                                            Bitrate = abr > 0 ? abr : 128000,
+                                            Channels = channels,
+                                            SampleRate = sampleRate,
+                                            IsOriginal = isOriginal,
+                                            IsDubbed = isDub,
+                                            IsDefault = isOriginal || (langKey == "und" && !isDub),
+                                            StreamUrl = url
+                                        };
+                                    }
                                 }
                             }
                         }
+
+                        info.AudioTracks = audioTrackMap.Values.OrderByDescending(a => a.IsDefault).ThenBy(a => a.Language).ToList();
                     }
 
                     info.HlsManifestUrl = bestHlsManifest ?? string.Empty;
                     info.DirectStreamUrl = bestCombinedUrl ?? bestHlsManifest ?? bestVideoOnlyUrl ?? string.Empty;
                     info.AudioStreamUrl = bestAudioOnlyUrl ?? string.Empty;
 
-                    if (root.TryGetProperty("subtitles", out var subs) && subs.ValueKind == JsonValueKind.Object)
-                    {
-                        foreach (var langProp in subs.EnumerateObject())
-                        {
-                            if (langProp.Value.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var subEntry in langProp.Value.EnumerateArray())
-                                {
-                                    var sExt = subEntry.TryGetProperty("ext", out var se) ? se.GetString() : null;
-                                    var sUrl = subEntry.TryGetProperty("url", out var su) ? su.GetString() : null;
-                                    if (sExt == "vtt" && !string.IsNullOrWhiteSpace(sUrl))
-                                    {
-                                        info.Subtitles[langProp.Name] = sUrl;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Parse official subtitles & automatic captions
+                    ParseSubtitlesAndCaptions(root, info);
 
                     var sbTask = GetSponsorBlockSegmentsAsync(videoId, cancellationToken);
                     var rydTask = GetReturnYouTubeDislikeAsync(videoId, cancellationToken);
@@ -179,6 +206,90 @@ public partial class YouTubeApiClient
         }
 
         return null;
+    }
+
+    private static void ParseSubtitlesAndCaptions(JsonElement root, YouTubeStreamInfoDto info)
+    {
+        var subtitleTrackMap = new Dictionary<string, YouTubeSubtitleTrackDto>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. Official/Manual Subtitles
+        if (root.TryGetProperty("subtitles", out var subs) && subs.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var langProp in subs.EnumerateObject())
+            {
+                if (langProp.Value.ValueKind != JsonValueKind.Array) continue;
+                foreach (var entry in langProp.Value.EnumerateArray())
+                {
+                    var ext = entry.TryGetProperty("ext", out var eProp) ? eProp.GetString() : null;
+                    var url = entry.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
+                    var name = entry.TryGetProperty("name", out var nProp) ? nProp.GetString() : null;
+
+                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3"))
+                    {
+                        var langCode = langProp.Name;
+                        var title = !string.IsNullOrWhiteSpace(name) ? name : langCode;
+                        info.Subtitles[langCode] = url;
+                        subtitleTrackMap[langCode] = new YouTubeSubtitleTrackDto
+                        {
+                            Language = langCode,
+                            Title = title,
+                            Format = "vtt",
+                            IsAutoGenerated = false,
+                            IsDefault = langCode.StartsWith("de", StringComparison.OrdinalIgnoreCase) || langCode.StartsWith("en", StringComparison.OrdinalIgnoreCase),
+                            StreamUrl = url
+                        };
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Automatic Captions (SmartTube 1:1 auto-caption parity)
+        if (root.TryGetProperty("automatic_captions", out var autoSubs) && autoSubs.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var langProp in autoSubs.EnumerateObject())
+            {
+                var langCode = langProp.Name;
+                if (subtitleTrackMap.ContainsKey(langCode)) continue;
+                if (langProp.Value.ValueKind != JsonValueKind.Array) continue;
+
+                foreach (var entry in langProp.Value.EnumerateArray())
+                {
+                    var ext = entry.TryGetProperty("ext", out var eProp) ? eProp.GetString() : null;
+                    var url = entry.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
+                    var name = entry.TryGetProperty("name", out var nProp) ? nProp.GetString() : null;
+
+                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3"))
+                    {
+                        var title = !string.IsNullOrWhiteSpace(name)
+                            ? $"{name} (Auto)"
+                            : $"{langCode} (Auto)";
+
+                        if (!info.Subtitles.ContainsKey(langCode))
+                        {
+                            info.Subtitles[langCode] = url;
+                        }
+
+                        subtitleTrackMap[langCode] = new YouTubeSubtitleTrackDto
+                        {
+                            Language = langCode,
+                            Title = title,
+                            Format = "vtt",
+                            IsAutoGenerated = true,
+                            IsDefault = false,
+                            StreamUrl = url
+                        };
+                        break;
+                    }
+                }
+            }
+        }
+
+        info.SubtitleTracks = subtitleTrackMap.Values
+            .OrderBy(s => s.IsAutoGenerated)
+            .ThenByDescending(s => s.IsDefault)
+            .ThenBy(s => s.Language)
+            .ToList();
     }
 
     public async Task<List<SponsorBlockSegmentDto>> GetSponsorBlockSegmentsAsync(

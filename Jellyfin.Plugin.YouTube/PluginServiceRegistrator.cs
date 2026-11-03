@@ -19,5 +19,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<YouTubePlaylistAndCollectionSyncService>());
         serviceCollection.AddSingleton<IChannel, YouTubeChannel>();
         serviceCollection.AddSingleton<IMediaSourceProvider, YouTubeMediaSourceProvider>();
+        serviceCollection.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
+        {
+            options.Filters.Add<YouTubePlaybackFilter>();
+        });
     }
 }

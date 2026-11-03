@@ -475,3 +475,82 @@ public class YouTubeStartupService : IHostedService
         }
     }
 }
+
+/// <summary>
+/// Intercepts Jellyfin's PlaybackInfo responses and /Videos/{itemId}/stream* requests for YouTube items.
+/// 1. Ensures PlaybackInfo returns a single unified MediaSourceInfo with all audio dubs and subtitle tracks,
+///    SupportsDirectPlay = true, SupportsDirectStream = true, SupportsTranscoding = false/true.
+/// 2. Redirects any legacy /Videos/{itemId}/stream* request for a YouTube item to /api/youtubePlugin/stream/{videoId}/master.m3u8
+///    or audio.m4a so players play directly.
+/// </summary>
+public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter, Microsoft.AspNetCore.Mvc.Filters.IAsyncResultFilter
+{
+    private readonly ILibraryManager _libraryManager;
+
+    public YouTubePlaybackFilter(ILibraryManager libraryManager)
+    {
+        _libraryManager = libraryManager;
+    }
+
+    public async Task OnActionExecutionAsync(
+        Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context,
+        Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+    {
+        var path = context.HttpContext.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/Videos/", StringComparison.OrdinalIgnoreCase) &&
+            (path.Contains("/stream", StringComparison.OrdinalIgnoreCase) || path.Contains("/master.m3u8", StringComparison.OrdinalIgnoreCase)))
+        {
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2 && Guid.TryParse(segments[1], out var itemId))
+            {
+                var item = _libraryManager.GetItemById(itemId);
+                if (item != null)
+                {
+                    var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+                    if (!string.IsNullOrWhiteSpace(videoId))
+                    {
+                        var req = context.HttpContext.Request;
+                        var scheme = req.Headers["X-Forwarded-Proto"].FirstOrDefault() ?? req.Scheme;
+                        var host = req.Headers["X-Forwarded-Host"].FirstOrDefault() ?? req.Host.Value;
+                        var serverUrl = !string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty;
+                        var target = (item is MediaBrowser.Controller.Entities.Audio.Audio || (item.Path != null && item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase)))
+                            ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
+                            : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+
+                        context.Result = new Microsoft.AspNetCore.Mvc.RedirectResult(target);
+                        return;
+                    }
+                }
+            }
+        }
+
+        await next().ConfigureAwait(false);
+    }
+
+    public async Task OnResultExecutionAsync(
+        Microsoft.AspNetCore.Mvc.Filters.ResultExecutingContext context,
+        Microsoft.AspNetCore.Mvc.Filters.ResultExecutionDelegate next)
+    {
+        var path = context.HttpContext.Request.Path.Value ?? string.Empty;
+        if (path.EndsWith("/PlaybackInfo", StringComparison.OrdinalIgnoreCase) &&
+            context.Result is Microsoft.AspNetCore.Mvc.ObjectResult { Value: MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbResp } &&
+            pbResp.MediaSources is { Count: > 0 })
+        {
+            var ytSource = pbResp.MediaSources
+                .OrderByDescending(m => m.MediaStreams?.Count ?? 0)
+                .FirstOrDefault(m => m.Path != null && m.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase));
+
+            if (ytSource != null)
+            {
+                ytSource.Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.Http;
+                ytSource.IsRemote = true;
+                ytSource.SupportsDirectPlay = true;
+                ytSource.SupportsDirectStream = true;
+                ytSource.SupportsTranscoding = true;
+                pbResp.MediaSources = new List<MediaBrowser.Model.Dto.MediaSourceInfo> { ytSource };
+            }
+        }
+
+        await next().ConfigureAwait(false);
+    }
+}

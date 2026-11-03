@@ -232,10 +232,13 @@ public class YouTubePluginController : ControllerBase
 
     [HttpGet("stream/{videoId}/audio.m4a")]
     [HttpGet("stream/{videoId}/audio")]
+    [HttpGet("stream/{videoId}/audio-{formatId}.m4a")]
     [AllowAnonymous]
     public async Task<ActionResult> PlayOrProxyAudioStream(
         [FromRoute] string videoId,
-        CancellationToken cancellationToken)
+        [FromRoute] string? formatId = null,
+        [FromQuery] string? lang = null,
+        CancellationToken cancellationToken = default)
     {
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
@@ -245,9 +248,26 @@ public class YouTubePluginController : ControllerBase
             return NotFound(new { error = $"Unable to resolve YouTube Music audio stream for {cleanId}" });
         }
 
-        var audioUrl = !string.IsNullOrWhiteSpace(info.AudioStreamUrl)
-            ? info.AudioStreamUrl
-            : info.DirectStreamUrl;
+        string? audioUrl = null;
+
+        // 1. If formatId specified, find that exact track
+        if (!string.IsNullOrWhiteSpace(formatId) && info.AudioTracks.Count > 0)
+        {
+            audioUrl = info.AudioTracks.FirstOrDefault(a => string.Equals(a.FormatId, formatId, StringComparison.OrdinalIgnoreCase))?.StreamUrl;
+        }
+
+        // 2. If lang specified, find matching audio dub track
+        if (string.IsNullOrWhiteSpace(audioUrl) && !string.IsNullOrWhiteSpace(lang) && info.AudioTracks.Count > 0)
+        {
+            audioUrl = info.AudioTracks.FirstOrDefault(a => a.Language.StartsWith(lang, StringComparison.OrdinalIgnoreCase))?.StreamUrl;
+        }
+
+        // 3. Fallback to default audio track or best audio stream URL
+        if (string.IsNullOrWhiteSpace(audioUrl))
+        {
+            audioUrl = info.AudioTracks.FirstOrDefault(a => a.IsDefault)?.StreamUrl
+                       ?? (!string.IsNullOrWhiteSpace(info.AudioStreamUrl) ? info.AudioStreamUrl : info.DirectStreamUrl);
+        }
 
         if (!string.IsNullOrWhiteSpace(audioUrl) && !IsM3u8PlaylistUrl(audioUrl))
         {
@@ -275,15 +295,29 @@ public class YouTubePluginController : ControllerBase
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
         var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
-        if (info == null || info.Subtitles == null || info.Subtitles.Count == 0)
+        if (info == null || (info.Subtitles.Count == 0 && info.SubtitleTracks.Count == 0))
         {
             return Content("WEBVTT\n\n", "text/vtt; charset=utf-8");
         }
 
-        if (!info.Subtitles.TryGetValue(lang, out var subUrl))
+        string? subUrl = null;
+
+        // 1. Check SubtitleTracks list first
+        var matchTrack = info.SubtitleTracks.FirstOrDefault(s => string.Equals(s.Language, lang, StringComparison.OrdinalIgnoreCase))
+                         ?? info.SubtitleTracks.FirstOrDefault(s => s.Language.StartsWith(lang, StringComparison.OrdinalIgnoreCase));
+        if (matchTrack != null)
         {
-            subUrl = info.Subtitles.FirstOrDefault(k => k.Key.StartsWith(lang, StringComparison.OrdinalIgnoreCase)).Value
-                     ?? info.Subtitles.Values.FirstOrDefault();
+            subUrl = matchTrack.StreamUrl;
+        }
+
+        // 2. Fallback to Subtitles dictionary
+        if (string.IsNullOrWhiteSpace(subUrl))
+        {
+            if (!info.Subtitles.TryGetValue(lang, out subUrl))
+            {
+                subUrl = info.Subtitles.FirstOrDefault(k => k.Key.StartsWith(lang, StringComparison.OrdinalIgnoreCase)).Value
+                         ?? info.Subtitles.Values.FirstOrDefault();
+            }
         }
 
         if (string.IsNullOrWhiteSpace(subUrl))
@@ -293,7 +327,18 @@ public class YouTubePluginController : ControllerBase
 
         try
         {
+            // Ensure fmt=vtt parameter is present for YouTube timedtext API endpoints
+            if (subUrl.Contains("/api/timedtext", StringComparison.OrdinalIgnoreCase) && !subUrl.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase))
+            {
+                subUrl += (subUrl.Contains('?') ? "&" : "?") + "fmt=vtt";
+            }
+
             var rawSub = await client.HttpClient.GetStringAsync(subUrl, cancellationToken).ConfigureAwait(false);
+            if (!rawSub.StartsWith("WEBVTT", StringComparison.OrdinalIgnoreCase))
+            {
+                rawSub = "WEBVTT\n\n" + rawSub;
+            }
+
             return Content(rawSub, "text/vtt; charset=utf-8");
         }
         catch
@@ -417,9 +462,18 @@ public class YouTubePluginController : ControllerBase
         var sb = new StringBuilder();
         var lines = m3u8Content.Split('\n');
         var serverUrl = Config.GetPublicServerUrl(Request.Scheme, Request.Host.Value);
+        var prefLang = Config.PreferredLanguage ?? "de";
 
-        foreach (var rawLine in lines)
+        // Keep track of audio groups and whether a default audio track was chosen per group
+        var defaultAudioSetForGroup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Pre-scan to identify audio languages present: if preferred language exists, keep it + original (en).
+        // Otherwise keep original + first fallback audio tracks.
+        var hasPrefAudio = m3u8Content.Contains($"LANGUAGE=\"{prefLang}", StringComparison.OrdinalIgnoreCase);
+
+        for (var i = 0; i < lines.Length; i++)
         {
+            var rawLine = lines[i];
             var line = rawLine.TrimEnd('\r');
             if (string.IsNullOrWhiteSpace(line))
             {
@@ -429,7 +483,7 @@ public class YouTubePluginController : ControllerBase
 
             if (line.StartsWith('#'))
             {
-                // Strip HLS SUBTITLES tracks from master manifest so FFmpeg remux (-codec copy -map -0:s)
+                // 1. Strip HLS SUBTITLES tracks from master manifest so FFmpeg remux (-codec copy -map -0:s)
                 // never attempts to open WebVTT subtitle playlists as MPEG-TS inputs
                 if (line.StartsWith("#EXT-X-MEDIA:", StringComparison.OrdinalIgnoreCase) &&
                     line.Contains("TYPE=SUBTITLES", StringComparison.OrdinalIgnoreCase))
@@ -440,6 +494,58 @@ public class YouTubePluginController : ControllerBase
                 if (line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
                 {
                     line = System.Text.RegularExpressions.Regex.Replace(line, @",SUBTITLES=""[^""]*""", string.Empty);
+                }
+
+                // 2. Filter #EXT-X-MEDIA:TYPE=AUDIO:
+                // Only keep preferred language track (e.g. de / de-DE) and original track (e.g. en / original).
+                // Drop 30+ foreign audio dub variants from master manifest so client probing and FFmpeg remux start instantly.
+                if (line.StartsWith("#EXT-X-MEDIA:", StringComparison.OrdinalIgnoreCase) &&
+                    line.Contains("TYPE=AUDIO", StringComparison.OrdinalIgnoreCase))
+                {
+                    var isPrefLang = line.Contains($"LANGUAGE=\"{prefLang}", StringComparison.OrdinalIgnoreCase);
+                    var isOriginal = line.Contains("original", StringComparison.OrdinalIgnoreCase) ||
+                                     line.Contains("LANGUAGE=\"en", StringComparison.OrdinalIgnoreCase);
+
+                    // If video has preferred language, keep prefLang and original; drop other dubs
+                    // If video doesn't have preferred language, keep original and default
+                    var shouldKeep = isPrefLang || isOriginal;
+                    if (!hasPrefAudio && !shouldKeep && line.Contains("DEFAULT=YES", StringComparison.OrdinalIgnoreCase))
+                    {
+                        shouldKeep = true;
+                    }
+
+                    if (!shouldKeep)
+                    {
+                        continue;
+                    }
+
+                    // Extract GROUP-ID
+                    var groupMatch = System.Text.RegularExpressions.Regex.Match(line, @"GROUP-ID=""([^""]+)""");
+                    var groupId = groupMatch.Success ? groupMatch.Groups[1].Value : "default";
+
+                    if (!defaultAudioSetForGroup.Contains(groupId))
+                    {
+                        if (isPrefLang || (!hasPrefAudio && isOriginal))
+                        {
+                            if (line.Contains("DEFAULT=NO", StringComparison.OrdinalIgnoreCase))
+                            {
+                                line = line.Replace("DEFAULT=NO", "DEFAULT=YES", StringComparison.OrdinalIgnoreCase);
+                            }
+                            else if (!line.Contains("DEFAULT=", StringComparison.OrdinalIgnoreCase))
+                            {
+                                line += ",DEFAULT=YES";
+                            }
+                            defaultAudioSetForGroup.Add(groupId);
+                        }
+                    }
+                    else
+                    {
+                        // Default already set for this group, ensure this secondary track is DEFAULT=NO
+                        if (line.Contains("DEFAULT=YES", StringComparison.OrdinalIgnoreCase))
+                        {
+                            line = line.Replace("DEFAULT=YES", "DEFAULT=NO", StringComparison.OrdinalIgnoreCase);
+                        }
+                    }
                 }
 
                 // Rewrite URI="..." inside #EXT-X-MEDIA or #EXT-X-MAP tags
