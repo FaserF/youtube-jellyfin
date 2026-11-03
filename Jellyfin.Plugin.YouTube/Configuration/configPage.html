@@ -89,6 +89,73 @@
                             <label class="inputLabel" for="txtStrmPath">YouTube .strm Library Path</label>
                             <input id="txtStrmPath" type="text" is="emby-input" />
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableYouTubeLibrary" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Native YouTube Video Library &amp; Automatic .strm Sync</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">🎵 YouTube Music Integration (Optional — Enabled by Default)</h2>
+                        <p>Integrates YouTube Music as both a native Jellyfin Music Channel and a dedicated Jellyfin Music Library with audio-only HQ streaming (AAC/M4A), mapped automatically to Fabian's account and optionally available to other users via Public Mode or self-service TV Code login.</p>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableYtm" type="checkbox" is="emby-checkbox" />
+                                <span>Enable YouTube Music Integration (Master Switch — Default: ON)</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableYtmChannel" type="checkbox" is="emby-checkbox" />
+                                <span>Enable YouTube Music Channel in Jellyfin (Supermix, Liked Songs, Listen Again, Playlists &amp; Charts)</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableYtmLibrary" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Dedicated "YouTube Music" Native Audio Library in Jellyfin</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableYtmPlaylistsSync" type="checkbox" is="emby-checkbox" />
+                                <span>Sync YouTube Music Feeds &amp; Playlists into Native Jellyfin Audio Playlists</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtYtmLibraryPath">YouTube Music Audio .strm Library Path</label>
+                            <input id="txtYtmLibraryPath" type="text" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="selectYtmBitrate">Preferred YouTube Music Audio Bitrate</label>
+                            <select is="emby-select" id="selectYtmBitrate" class="emby-select-withcolor emby-select">
+                                <option value="256">High Quality (256 kbps AAC / Opus)</option>
+                                <option value="192">Standard High (192 kbps)</option>
+                                <option value="128">Data Saver (128 kbps)</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtYtmMaxItems">Max Tracks per YouTube Music Feed / Playlist</label>
+                            <input id="txtYtmMaxItems" type="number" min="5" max="100" is="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">🌐 Universal Multi-User &amp; Primary Account Settings</h2>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtPrimaryUser">Primary Jellyfin Username (Auto-Mapped to Seeded Account)</label>
+                            <input id="txtPrimaryUser" type="text" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtPreferredLang">Preferred Language / Locale (e.g. de-DE, en-US)</label>
+                            <input id="txtPreferredLang" type="text" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtPreferredRegion">Preferred Region Code (e.g. DE, US, AT, CH)</label>
+                            <input id="txtPreferredRegion" type="text" is="emby-input" />
+                        </div>
                         <div>
                             <button is="emby-button" type="submit" class="raised button-submit block">
                                 <span>Save Settings</span>
@@ -144,6 +211,17 @@
                         document.getElementById("selectMaxRes").value = String(config.PreferredMaxResolution || 2160);
                         document.getElementById("txtProxyUrl").value = config.ProxyUrl || "";
                         document.getElementById("txtStrmPath").value = config.StrmLibraryPath || "/data/youtube";
+                        document.getElementById("chkEnableYouTubeLibrary").checked = config.EnableYouTubeLibrary !== false;
+                        document.getElementById("chkEnableYtm").checked = config.EnableYouTubeMusic !== false;
+                        document.getElementById("chkEnableYtmChannel").checked = config.EnableYouTubeMusicChannel !== false;
+                        document.getElementById("chkEnableYtmLibrary").checked = config.EnableYouTubeMusicLibrary !== false;
+                        document.getElementById("chkEnableYtmPlaylistsSync").checked = config.EnableYouTubeMusicPlaylistsSync !== false;
+                        document.getElementById("txtYtmLibraryPath").value = config.YouTubeMusicLibraryPath || "/data/youtube-music";
+                        document.getElementById("selectYtmBitrate").value = String(config.YouTubeMusicPreferredBitrate || 256);
+                        document.getElementById("txtYtmMaxItems").value = String(config.YouTubeMusicMaxItemsPerFeed || 25);
+                        document.getElementById("txtPrimaryUser").value = config.PrimaryJellyfinUser || "fabian";
+                        document.getElementById("txtPreferredLang").value = config.PreferredLanguage || "de-DE";
+                        document.getElementById("txtPreferredRegion").value = config.PreferredRegion || "DE";
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -190,6 +268,18 @@
                         config.PreferredMaxResolution = parseInt(document.getElementById("selectMaxRes").value, 10) || 2160;
                         config.ProxyUrl = document.getElementById("txtProxyUrl").value.trim();
                         config.StrmLibraryPath = document.getElementById("txtStrmPath").value.trim();
+                        config.EnableYouTubeLibrary = document.getElementById("chkEnableYouTubeLibrary").checked;
+                        config.EnableStrmSync = document.getElementById("chkEnableYouTubeLibrary").checked;
+                        config.EnableYouTubeMusic = document.getElementById("chkEnableYtm").checked;
+                        config.EnableYouTubeMusicChannel = document.getElementById("chkEnableYtmChannel").checked;
+                        config.EnableYouTubeMusicLibrary = document.getElementById("chkEnableYtmLibrary").checked;
+                        config.EnableYouTubeMusicPlaylistsSync = document.getElementById("chkEnableYtmPlaylistsSync").checked;
+                        config.YouTubeMusicLibraryPath = document.getElementById("txtYtmLibraryPath").value.trim() || "/data/youtube-music";
+                        config.YouTubeMusicPreferredBitrate = parseInt(document.getElementById("selectYtmBitrate").value, 10) || 256;
+                        config.YouTubeMusicMaxItemsPerFeed = parseInt(document.getElementById("txtYtmMaxItems").value, 10) || 25;
+                        config.PrimaryJellyfinUser = document.getElementById("txtPrimaryUser").value.trim() || "fabian";
+                        config.PreferredLanguage = document.getElementById("txtPreferredLang").value.trim() || "de-DE";
+                        config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "DE";
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

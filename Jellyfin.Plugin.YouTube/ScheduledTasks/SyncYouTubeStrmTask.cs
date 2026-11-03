@@ -151,7 +151,139 @@ public class SyncYouTubeStrmTask : IScheduledTask
         }
 
         logger.LogInformation("YouTube .strm sync completed: {Added} new .strm pointers written across feeds and {Channels} subscribed channels", totalAdded, channels.Count);
+
+        if (config.EnableYouTubeMusic && config.EnableYouTubeMusicLibrary)
+        {
+            totalAdded += await PerformMusicSyncAsync(client, config, logger, cancellationToken).ConfigureAwait(false);
+        }
+
         return totalAdded;
+    }
+
+    public static async Task<int> PerformMusicSyncAsync(
+        YouTubeApiClient client,
+        PluginConfiguration config,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var musicRoot = !string.IsNullOrWhiteSpace(config.YouTubeMusicLibraryPath) ? config.YouTubeMusicLibraryPath : "/data/youtube-music";
+        Directory.CreateDirectory(musicRoot);
+
+        var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : "fabian";
+        var limit = config.YouTubeMusicMaxItemsPerFeed > 0 ? config.YouTubeMusicMaxItemsPerFeed : 25;
+        var musicAdded = 0;
+
+        var musicSections = new (string BrowseId, string ArtistFolder, string AlbumFolder)[]
+        {
+            ("FEmusic", "01 - YouTube Music Supermix & Charts", "Supermix & Top Music"),
+            ("VLLV", "02 - Liked Songs & Favoriten", "Liked Songs"),
+            ("FEhistory", "03 - Listen Again & Verlauf", "Recently Played")
+        };
+
+        foreach (var (browseId, artistFolder, albumFolder) in musicSections)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var tracks = await client.GetBrowseFeedAsync(browseId, primaryUser, limit, cancellationToken).ConfigureAwait(false);
+                if (tracks.Count == 0 && browseId == "FEmusic")
+                {
+                    tracks = await client.SearchVideosAsync("Official Music Video Audio Charts", primaryUser, limit, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (tracks.Count == 0)
+                {
+                    continue;
+                }
+
+                var albumDir = Path.Combine(musicRoot, artistFolder, albumFolder);
+                Directory.CreateDirectory(albumDir);
+                musicAdded += await WriteMusicStrmTracksAsync(albumDir, tracks, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not sync YouTube Music section {ArtistFolder}", artistFolder);
+            }
+        }
+
+        if (config.EnableYouTubeMusicPlaylistsSync)
+        {
+            try
+            {
+                var playlists = await client.GetUserPlaylistsAsync(primaryUser, 20, cancellationToken).ConfigureAwait(false);
+                foreach (var pl in playlists)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var plTracks = await client.GetPlaylistVideosAsync(pl.PlaylistId, primaryUser, limit, cancellationToken).ConfigureAwait(false);
+                    if (plTracks.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var safePl = SanitizeFileName(pl.Title);
+                    var albumDir = Path.Combine(musicRoot, "04 - Meine YouTube Music Playlists", $"{safePl} [YouTubePlaylist-{pl.PlaylistId}]");
+                    Directory.CreateDirectory(albumDir);
+                    musicAdded += await WriteMusicStrmTracksAsync(albumDir, plTracks, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not sync YouTube Music playlists");
+            }
+        }
+
+        logger.LogInformation("YouTube Music .strm sync completed: {Added} new audio .strm pointers written to {Path}", musicAdded, musicRoot);
+        return musicAdded;
+    }
+
+    private static async Task<int> WriteMusicStrmTracksAsync(
+        string albumDir,
+        List<YouTubeVideoItem> tracks,
+        CancellationToken cancellationToken)
+    {
+        var added = 0;
+        var activePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var t in tracks)
+        {
+            if (string.IsNullOrWhiteSpace(t.VideoId))
+            {
+                continue;
+            }
+
+            var trackNum = GetStableEpisodeNumber(t.VideoId);
+            var artist = !string.IsNullOrWhiteSpace(t.ChannelTitle) ? t.ChannelTitle.Replace(" - Topic", string.Empty, StringComparison.OrdinalIgnoreCase) : "YouTube Music";
+            var prefix = !t.Title.Contains(artist, StringComparison.OrdinalIgnoreCase)
+                ? $"{artist} - {t.Title}"
+                : t.Title;
+            var safeTitle = SanitizeFileName(prefix);
+            var strmPath = Path.Combine(albumDir, $"{trackNum:D4} - {safeTitle} [YouTubeAudio-{t.VideoId}].strm");
+            activePaths.Add(strmPath);
+
+            var expectedUrl = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
+            if (!File.Exists(strmPath))
+            {
+                await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
+                added++;
+            }
+        }
+
+        try
+        {
+            foreach (var existing in Directory.GetFiles(albumDir, "*.strm"))
+            {
+                if (!activePaths.Contains(existing))
+                {
+                    File.Delete(existing);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore cleanup errors
+        }
+
+        return added;
     }
 
     private static async Task<int> WriteStrmVideosAsync(

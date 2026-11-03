@@ -21,6 +21,13 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableYouTubeLibrary = true;
         EnableStrmSync = true;
         EnableMovieSupport = true;
+        EnableYouTubeMusic = true;
+        EnableYouTubeMusicChannel = true;
+        EnableYouTubeMusicLibrary = true;
+        EnableYouTubeMusicPlaylistsSync = true;
+        YouTubeMusicMaxItemsPerFeed = 25;
+        YouTubeMusicPreferredBitrate = 256;
+        YouTubeMusicLibraryPath = "/data/youtube-music";
         FetchThumbnails = true;
         StrmLibraryPath = "/data/youtube";
         ProxyUrl = "socks5://easyproxy-sports:1080";
@@ -49,6 +56,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableYouTubeLibrary { get; set; }
     public bool EnableStrmSync { get; set; }
     public bool EnableMovieSupport { get; set; }
+    public bool EnableYouTubeMusic { get; set; }
+    public bool EnableYouTubeMusicChannel { get; set; }
+    public bool EnableYouTubeMusicLibrary { get; set; }
+    public bool EnableYouTubeMusicPlaylistsSync { get; set; }
+    public int YouTubeMusicMaxItemsPerFeed { get; set; }
+    public int YouTubeMusicPreferredBitrate { get; set; }
+    public string YouTubeMusicLibraryPath { get; set; }
     public bool FetchThumbnails { get; set; }
     public string StrmLibraryPath { get; set; }
     public string ProxyUrl { get; set; }

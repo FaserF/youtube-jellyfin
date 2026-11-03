@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
@@ -14,10 +15,13 @@ public static class YouTubeIdKeys
     public const string Channel = "YouTubeChannel";
     public const string Playlist = "YouTubePlaylist";
     public const string Movie = "YouTubeMovie";
+    public const string Audio = "YouTubeAudio";
+    public const string Album = "YouTubeAlbum";
+    public const string Artist = "YouTubeArtist";
 
-    private static readonly Regex VideoPathRegex = new(@"\[YouTubeVideo-([a-zA-Z0-9_-]{11})\]", RegexOptions.Compiled);
-    private static readonly Regex ChannelPathRegex = new(@"\[YouTubeChannel-(UC[a-zA-Z0-9_-]{20,28})\]", RegexOptions.Compiled);
-    private static readonly Regex PlaylistPathRegex = new(@"\[YouTubePlaylist-(PL[a-zA-Z0-9_-]{10,48})\]", RegexOptions.Compiled);
+    private static readonly Regex VideoPathRegex = new(@"\[(?:YouTubeVideo|YouTubeAudio)-([a-zA-Z0-9_-]{11})\]", RegexOptions.Compiled);
+    private static readonly Regex ChannelPathRegex = new(@"\[(?:YouTubeChannel|YouTubeArtist)-(UC[a-zA-Z0-9_-]{20,28})\]", RegexOptions.Compiled);
+    private static readonly Regex PlaylistPathRegex = new(@"\[(?:YouTubePlaylist|YouTubeAlbum)-([a-zA-Z0-9_-]{10,64})\]", RegexOptions.Compiled);
 
     public static string? GetVideoId(IDictionary<string, string>? ids)
     {
@@ -29,6 +33,11 @@ public static class YouTubeIdKeys
         if (ids.TryGetValue(Video, out var v) && !string.IsNullOrWhiteSpace(v))
         {
             return v;
+        }
+
+        if (ids.TryGetValue(Audio, out var a) && !string.IsNullOrWhiteSpace(a))
+        {
+            return a;
         }
 
         if (ids.TryGetValue(Movie, out var m) && !string.IsNullOrWhiteSpace(m))
@@ -46,6 +55,13 @@ public static class YouTubeIdKeys
 
     public static void SetVideoId(IHasProviderIds item, string videoId)
     {
+        item.SetProviderId(Video, videoId);
+        item.SetProviderId("YouTube", videoId);
+    }
+
+    public static void SetAudioId(IHasProviderIds item, string videoId)
+    {
+        item.SetProviderId(Audio, videoId);
         item.SetProviderId(Video, videoId);
         item.SetProviderId("YouTube", videoId);
     }
@@ -158,9 +174,23 @@ public class YouTubeExternalUrlProvider : IExternalUrlProvider
         }
 
         var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds);
-        if (!string.IsNullOrEmpty(videoId) && item is Episode or Movie)
+        if (!string.IsNullOrEmpty(videoId) && item is Episode or Movie or Audio)
         {
+            if (item is Audio)
+            {
+                yield return $"https://music.youtube.com/watch?v={videoId}";
+            }
+
             yield return $"https://www.youtube.com/watch?v={videoId}";
         }
     }
+}
+
+public class YouTubeAudioExternalId : IExternalId
+{
+    public string ProviderName => "YouTube Music";
+    public string Key => YouTubeIdKeys.Audio;
+    public ExternalIdMediaType? Type => ExternalIdMediaType.Track;
+    public string? UrlFormatString => "https://music.youtube.com/watch?v={0}";
+    public bool Supports(IHasProviderIds item) => item is Audio;
 }

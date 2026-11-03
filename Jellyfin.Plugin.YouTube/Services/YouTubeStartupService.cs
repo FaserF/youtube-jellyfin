@@ -56,6 +56,7 @@ public class YouTubeStartupService : IHostedService
         TryBootstrapFabianAccount();
         TryInjectIndexHtmlScript();
         await EnsureYouTubeLibraryAsync().ConfigureAwait(false);
+        await EnsureYouTubeMusicLibraryAsync().ConfigureAwait(false);
 
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
         _userDataManager.UserDataSaved += OnUserDataSaved;
@@ -270,6 +271,77 @@ public class YouTubeStartupService : IHostedService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to automatically create YouTube media library");
+        }
+    }
+
+    private async Task EnsureYouTubeMusicLibraryAsync()
+    {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        if (!config.EnableYouTubeMusic || !config.EnableYouTubeMusicLibrary || string.IsNullOrWhiteSpace(config.YouTubeMusicLibraryPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(config.YouTubeMusicLibraryPath);
+            EnsureLibraryArtwork(config.YouTubeMusicLibraryPath);
+
+            var vfs = _libraryManager.GetVirtualFolders();
+            var existingVf = vfs.FirstOrDefault(v => string.Equals(v.Name, "YouTube Music", StringComparison.OrdinalIgnoreCase));
+
+            if (existingVf == null)
+            {
+#pragma warning disable CS0618
+                var libraryOptions = new LibraryOptions
+                {
+                    EnableInternetProviders = true,
+                    EnableRealtimeMonitor = true,
+                    SaveLocalMetadata = false,
+                    EnablePhotos = false,
+                    EnableTrickplayImageExtraction = false,
+                    ExtractChapterImagesDuringLibraryScan = false,
+                    PathInfos = new[] { new MediaPathInfo { Path = config.YouTubeMusicLibraryPath } },
+                    TypeOptions = new[]
+                    {
+                        new TypeOptions
+                        {
+                            Type = "MusicArtist",
+                            MetadataFetchers = new[] { "YouTube" },
+                            MetadataFetcherOrder = new[] { "YouTube" },
+                            ImageFetchers = new[] { "YouTube" },
+                            ImageFetcherOrder = new[] { "YouTube" }
+                        },
+                        new TypeOptions
+                        {
+                            Type = "MusicAlbum",
+                            MetadataFetchers = new[] { "YouTube" },
+                            MetadataFetcherOrder = new[] { "YouTube" },
+                            ImageFetchers = new[] { "YouTube" },
+                            ImageFetcherOrder = new[] { "YouTube" }
+                        },
+                        new TypeOptions
+                        {
+                            Type = "Audio",
+                            MetadataFetchers = new[] { "YouTube" },
+                            MetadataFetcherOrder = new[] { "YouTube" },
+                            ImageFetchers = new[] { "YouTube" },
+                            ImageFetcherOrder = new[] { "YouTube" }
+                        }
+                    }
+                };
+#pragma warning restore CS0618
+
+                await _libraryManager.AddVirtualFolder("YouTube Music", CollectionTypeOptions.music, libraryOptions, true).ConfigureAwait(false);
+                _logger.LogInformation("Created native YouTube Music media library pointing to {Path}", config.YouTubeMusicLibraryPath);
+                _libraryManager.QueueLibraryScan();
+            }
+
+            EnsureLibraryArtwork("/config/data/root/default/YouTube Music");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to automatically create YouTube Music media library");
         }
     }
 

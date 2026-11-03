@@ -174,6 +174,51 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
             {
                 await UpsertCollectionOnlyAsync("YouTube - Abonnierte Kanäle", ytSeriesIds).ConfigureAwait(false);
             }
+
+            // 4. Sync YouTube Music Audio Tracks into Native Jellyfin Music Playlists
+            if (config.EnableYouTubeMusic && config.EnableYouTubeMusicPlaylistsSync)
+            {
+                var allAudio = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Audio },
+                    Recursive = true
+                });
+
+                var audioMap = new Dictionary<string, BaseItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (var a in allAudio)
+                {
+                    var vid = YouTubeIdKeys.GetVideoId(a.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(a.Path);
+                    if (!string.IsNullOrWhiteSpace(vid) && !audioMap.ContainsKey(vid))
+                    {
+                        audioMap[vid] = a;
+                    }
+                }
+
+                if (audioMap.Count > 0)
+                {
+                    var musicFeeds = new (string Name, string BrowseId)[]
+                    {
+                        ("YouTube Music - Supermix & Charts", "FEmusic"),
+                        ("YouTube Music - Liked Songs", "VLLV"),
+                        ("YouTube Music - Listen Again", "FEhistory")
+                    };
+
+                    foreach (var (plName, browseId) in musicFeeds)
+                    {
+                        var tracks = await client.GetBrowseFeedAsync(browseId, primaryUser, 30, cancellationToken).ConfigureAwait(false);
+                        var trackIds = tracks
+                            .Where(v => !string.IsNullOrWhiteSpace(v.VideoId) && audioMap.ContainsKey(v.VideoId))
+                            .Select(v => audioMap[v.VideoId].Id)
+                            .Distinct()
+                            .ToList();
+
+                        if (trackIds.Count > 0)
+                        {
+                            await UpsertPlaylistAndCollectionAsync(plName, trackIds, userGuid, MediaType.Audio).ConfigureAwait(false);
+                        }
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -185,7 +230,7 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
         }
     }
 
-    private async Task UpsertPlaylistAndCollectionAsync(string name, List<Guid> itemIds, Guid userGuid)
+    private async Task UpsertPlaylistAndCollectionAsync(string name, List<Guid> itemIds, Guid userGuid, MediaType mediaType = MediaType.Video)
     {
         await UpsertCollectionOnlyAsync(name, itemIds).ConfigureAwait(false);
 
@@ -210,9 +255,10 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
                     Name = name,
                     ItemIdList = itemIds.ToArray(),
                     UserId = userGuid,
+                    MediaType = mediaType,
                     Public = true
                 }).ConfigureAwait(false);
-                _logger.LogInformation("Created native Jellyfin playlist '{PlaylistName}' with {Count} YouTube videos", name, itemIds.Count);
+                _logger.LogInformation("Created native Jellyfin playlist '{PlaylistName}' with {Count} items", name, itemIds.Count);
             }
         }
         catch (Exception ex)

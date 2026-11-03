@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -14,7 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.YouTube.Providers;
 
 /// <summary>
-/// Dynamic MediaSource provider for YouTube .strm and library items.
+/// Dynamic MediaSource provider for YouTube &amp; YouTube Music .strm and library items.
 /// Supplies playable MediaSourceInfo with pre-populated video, audio, and subtitle streams
 /// so Android TV, Fire TV, Web, and Mobile clients play immediately without FFmpeg probing delays.
 /// </summary>
@@ -41,7 +42,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
 
     public async Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
     {
-        if (item is not Episode && item is not Movie)
+        if (item is not Episode && item is not Movie && item is not Audio)
         {
             return Enumerable.Empty<MediaSourceInfo>();
         }
@@ -52,7 +53,10 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             return Enumerable.Empty<MediaSourceInfo>();
         }
 
-        if (_sourceCache.TryGetValue(videoId, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheTtl)
+        var isAudioItem = item is Audio || (item.Path != null && item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase));
+        var cacheKey = isAudioItem ? $"audio_{videoId}" : $"video_{videoId}";
+
+        if (_sourceCache.TryGetValue(cacheKey, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheTtl)
         {
             var cachedSource = cached.Source;
             cachedSource.Id = item.Id.ToString("N");
@@ -66,6 +70,43 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 _loggerFactory.CreateLogger<YouTubeApiClient>());
 
             var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
+            if (isAudioItem)
+            {
+                var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+                var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
+                var audioSource = new MediaSourceInfo
+                {
+                    Id = item.Id.ToString("N"),
+                    Name = $"{item.Name} (YouTube Music HQ)",
+                    Path = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/audio.m4a",
+                    Protocol = MediaProtocol.Http,
+                    Container = "m4a",
+                    SupportsDirectPlay = true,
+                    SupportsDirectStream = true,
+                    SupportsTranscoding = true,
+                    SupportsProbing = false,
+                    RunTimeTicks = streamInfo?.DurationSeconds > 0 ? TimeSpan.FromSeconds(streamInfo.DurationSeconds).Ticks : item.RunTimeTicks,
+                    MediaStreams = new List<MediaStream>
+                    {
+                        new()
+                        {
+                            Type = MediaStreamType.Audio,
+                            Index = 0,
+                            Codec = "aac",
+                            Channels = 2,
+                            SampleRate = 44100,
+                            BitRate = bitrate,
+                            Language = "und",
+                            Title = "YouTube Music Audio (AAC)",
+                            IsDefault = true
+                        }
+                    }
+                };
+
+                _sourceCache[cacheKey] = (audioSource, DateTime.UtcNow);
+                return new[] { audioSource };
+            }
+
             var width = streamInfo?.Width > 0 ? streamInfo.Width : 1920;
             var height = streamInfo?.Height > 0 ? streamInfo.Height : 1080;
 
@@ -136,7 +177,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 MediaStreams = streams
             };
 
-            _sourceCache[videoId] = (source, DateTime.UtcNow);
+            _sourceCache[cacheKey] = (source, DateTime.UtcNow);
             return new[] { source };
         }
         catch (Exception ex)

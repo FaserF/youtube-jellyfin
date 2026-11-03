@@ -230,6 +230,40 @@ public class YouTubePluginController : ControllerBase
         return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
     }
 
+    [HttpGet("stream/{videoId}/audio.m4a")]
+    [HttpGet("stream/{videoId}/audio")]
+    [AllowAnonymous]
+    public async Task<ActionResult> PlayOrProxyAudioStream(
+        [FromRoute] string videoId,
+        CancellationToken cancellationToken)
+    {
+        var cleanId = CleanVideoId(videoId);
+        using var client = CreateClient();
+        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        if (info == null)
+        {
+            return NotFound(new { error = $"Unable to resolve YouTube Music audio stream for {cleanId}" });
+        }
+
+        var audioUrl = !string.IsNullOrWhiteSpace(info.AudioStreamUrl)
+            ? info.AudioStreamUrl
+            : info.DirectStreamUrl;
+
+        if (!string.IsNullOrWhiteSpace(audioUrl) && !IsM3u8PlaylistUrl(audioUrl))
+        {
+            return await ProxyRemoteUrlInternalAsync(client, audioUrl, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.HlsManifestUrl))
+        {
+            var rawM3u8 = await client.HttpClient.GetStringAsync(info.HlsManifestUrl, cancellationToken).ConfigureAwait(false);
+            var rewritten = RewriteM3u8Urls(rawM3u8, info.HlsManifestUrl);
+            return Content(rewritten, "application/vnd.apple.mpegurl; charset=utf-8");
+        }
+
+        return NotFound();
+    }
+
     [HttpGet("stream/{videoId}/subtitles/{lang}.vtt")]
     [AllowAnonymous]
     [Produces("text/vtt")]
@@ -331,9 +365,13 @@ public class YouTubePluginController : ControllerBase
         Response.Headers["Accept-Ranges"] = "bytes";
         var isVtt = targetUrl.Contains("timedtext", StringComparison.OrdinalIgnoreCase) ||
                     targetUrl.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase);
+        var isAudioM4a = targetUrl.Contains("mime=audio%2Fmp4", StringComparison.OrdinalIgnoreCase) ||
+                         targetUrl.Contains("mime=audio/mp4", StringComparison.OrdinalIgnoreCase);
         Response.ContentType = isVtt
             ? "text/vtt; charset=utf-8"
-            : (resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t");
+            : isAudioM4a
+                ? "audio/mp4"
+                : (resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t");
         await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
         return new EmptyResult();
@@ -510,6 +548,11 @@ public class YouTubePluginController : ControllerBase
 
     private string CleanVideoId(string raw)
     {
+        if (raw.StartsWith("ytm_", StringComparison.Ordinal))
+        {
+            return raw["ytm_".Length..];
+        }
+
         if (raw.StartsWith("yt_", StringComparison.Ordinal))
         {
             return raw["yt_".Length..];

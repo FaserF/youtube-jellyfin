@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
@@ -31,15 +32,15 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
     private YouTubeApiClient CreateClient() =>
         new(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
 
-    public bool Supports(BaseItem item) => item is Series or Season or Episode or Movie;
+    public bool Supports(BaseItem item) => item is Series or Season or Episode or Movie or Audio or MusicAlbum or MusicArtist;
 
     public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
     {
         return item switch
         {
-            Series or Movie => new[] { ImageType.Primary, ImageType.Backdrop },
-            Season => new[] { ImageType.Primary },
-            Episode => new[] { ImageType.Primary },
+            Series or Movie or MusicArtist => new[] { ImageType.Primary, ImageType.Backdrop },
+            Season or MusicAlbum => new[] { ImageType.Primary },
+            Episode or Audio => new[] { ImageType.Primary },
             _ => Array.Empty<ImageType>()
         };
     }
@@ -52,7 +53,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
             return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
         }
 
-        if (item is Episode or Movie)
+        if (item is Episode or Movie or Audio)
         {
             var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds)
                 ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
@@ -93,7 +94,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                         Type = ImageType.Primary,
                         Url = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
                     });
-                    if (item is Series)
+                    if (item is Series or MusicArtist)
                     {
                         list.Add(new RemoteImageInfo
                         {
