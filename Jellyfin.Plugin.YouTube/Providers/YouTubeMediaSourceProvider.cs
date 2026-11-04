@@ -28,7 +28,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
     public int Order => -100;
 
     private static readonly ConcurrentDictionary<string, (MediaSourceInfo Source, DateTime CachedAt)> _sourceCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(4);
 
     public YouTubeMediaSourceProvider(
         IHttpClientFactory httpClientFactory,
@@ -88,7 +88,13 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 _httpClientFactory.CreateClient("YouTube"),
                 _loggerFactory.CreateLogger<YouTubeApiClient>());
 
-            var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
+            var hasCached = YouTubeApiClient.TryGetCachedStream(videoId, out var streamInfo);
+            if (!hasCached)
+            {
+                // Non-blocking speculative prefetch so yt-dlp runs concurrently without freezing Jellyfin UI
+                client.PrefetchStreamInBackground(videoId);
+            }
+
             if (isAudioItem)
             {
                 var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
@@ -122,7 +128,10 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     }
                 };
 
-                _sourceCache[cacheKey] = (audioSource, DateTime.UtcNow);
+                if (hasCached)
+                {
+                    _sourceCache[cacheKey] = (audioSource, DateTime.UtcNow);
+                }
                 return new[] { audioSource };
             }
 
@@ -230,7 +239,10 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 });
             }
 
-            _sourceCache[cacheKey] = (allSources[0], DateTime.UtcNow);
+            if (hasCached && allSources.Count > 0)
+            {
+                _sourceCache[cacheKey] = (allSources[0], DateTime.UtcNow);
+            }
             return allSources;
         }
         catch (Exception ex)

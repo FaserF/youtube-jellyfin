@@ -23,7 +23,7 @@ public partial class YouTubeApiClient
         }
 
         if (_streamCache.TryGetValue(videoId, out var cached) &&
-            (DateTime.UtcNow - cached.CachedAt).TotalMinutes < 45)
+            (DateTime.UtcNow - cached.CachedAt) < TimeSpan.FromHours(4))
         {
             return cached.Info;
         }
@@ -45,7 +45,7 @@ public partial class YouTubeApiClient
     private async Task<YouTubeStreamInfoDto?> ResolveStreamCoreAsync(string videoId)
     {
         if (_streamCache.TryGetValue(videoId, out var cached) &&
-            (DateTime.UtcNow - cached.CachedAt).TotalMinutes < 45)
+            (DateTime.UtcNow - cached.CachedAt) < TimeSpan.FromHours(4))
         {
             return cached.Info;
         }
@@ -304,21 +304,27 @@ public partial class YouTubeApiClient
 
                 ParseSubtitlesAndCaptions(root, info);
 
-                try
-                {
-                    using var metaCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
-                    var sbTask = GetSponsorBlockSegmentsAsync(videoId, metaCts.Token);
-                    var rydTask = GetReturnYouTubeDislikeAsync(videoId, metaCts.Token);
-                    await Task.WhenAll(sbTask, rydTask).ConfigureAwait(false);
-                    info.SponsorSegments = await sbTask.ConfigureAwait(false);
-                    info.DislikeStats = await rydTask.ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Timed out or failed fetching optional SponsorBlock/RYD metadata during stream resolve for {VideoId}", videoId);
-                }
-
                 _streamCache[videoId] = (info, DateTime.UtcNow);
+
+                // Fetch optional SponsorBlock segments & Return YouTube Dislike asynchronously in background
+                // without blocking critical playback start latency
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var metaCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        var sbTask = GetSponsorBlockSegmentsAsync(videoId, metaCts.Token);
+                        var rydTask = GetReturnYouTubeDislikeAsync(videoId, metaCts.Token);
+                        await Task.WhenAll(sbTask, rydTask).ConfigureAwait(false);
+                        info.SponsorSegments = await sbTask.ConfigureAwait(false);
+                        info.DislikeStats = await rydTask.ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Background SponsorBlock/RYD metadata update notice for {VideoId}", videoId);
+                    }
+                });
+
                 return info;
             }
         }
@@ -350,7 +356,9 @@ public partial class YouTubeApiClient
             "--geo-bypass-country",
             !string.IsNullOrWhiteSpace(config.PreferredRegion) ? config.PreferredRegion : "DE",
             "--socket-timeout",
-            "10",
+            "15",
+            "--extractor-args",
+            "youtube:player_client=tv,android",
             "--no-write-auto-subs",
             "--no-write-subs",
             "--skip-download",
@@ -404,7 +412,16 @@ public partial class YouTubeApiClient
 
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();
         var stderrTask = proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
+            throw;
+        }
+
         var stdout = await stdoutTask.ConfigureAwait(false);
         _ = await stderrTask.ConfigureAwait(false);
 

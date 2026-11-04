@@ -303,6 +303,40 @@ public partial class YouTubeApiClient : IDisposable
         return null;
     }
 
+    public static bool TryGetCachedStream(string videoId, out YouTubeStreamInfoDto? info)
+    {
+        if (!string.IsNullOrWhiteSpace(videoId) &&
+            _streamCache.TryGetValue(videoId, out var cached) &&
+            (DateTime.UtcNow - cached.CachedAt) < TimeSpan.FromHours(4))
+        {
+            info = cached.Info;
+            return true;
+        }
+
+        info = null;
+        return false;
+    }
+
+    public void PrefetchStreamInBackground(string videoId)
+    {
+        if (string.IsNullOrWhiteSpace(videoId) || TryGetCachedStream(videoId, out _))
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ResolveStreamAsync(videoId).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Background stream prefetch notice for {VideoId}", videoId);
+            }
+        });
+    }
+
     public void Dispose()
     {
         if (!_disposed)

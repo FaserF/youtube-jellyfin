@@ -57,17 +57,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
     public bool IsEnabledFor(string userId)
     {
         var config = Config;
-        if (!config.EnableStreamingChannel)
-        {
-            return false;
-        }
-
-        if (config.EnablePublicFallbackForUnlinkedUsers)
-        {
-            return true;
-        }
-
-        return config.GetAccountForUser(userId) != null;
+        return config.EnableStreamingChannel && (config.EnablePublicFallbackForUnlinkedUsers || config.GetAccountForUser(userId) != null);
     }
 
     public string GetCacheKey(string? userId)
@@ -259,10 +249,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                 ("ytm_sub_chill", "☕ Chill, Lo-Fi & Study Beats", "Relaxing background music (Audio Stream)"),
                 ("ytm_sub_workout", "⚡ Workout & Electronic Mix", "High-energy workout music (Audio Stream)")
             };
-            foreach (var (id, title, desc) in ytmFolders)
-            {
-                items.Add(new ChannelItemInfo { Id = id, Name = title, Overview = desc, Type = ChannelItemType.Folder });
-            }
+            items.AddRange(ytmFolders.Select(f => new ChannelItemInfo { Id = f.Id, Name = f.Title, Overview = f.Desc, Type = ChannelItemType.Folder }));
 
             return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
         }
@@ -400,6 +387,11 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             }
 
             list.Add(item);
+        }
+
+        foreach (var top in videos.Take(2))
+        {
+            client.PrefetchStreamInBackground(top.VideoId);
         }
 
         return list;
