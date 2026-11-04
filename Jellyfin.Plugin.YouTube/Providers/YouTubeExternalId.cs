@@ -93,6 +93,39 @@ public static class YouTubeIdKeys
         }
 
         var m = VideoPathRegex.Match(path);
+        if (m.Success)
+        {
+            return m.Groups[1].Value;
+        }
+
+        // Support companion .trailer.strm or generic .strm files with embedded YouTube URLs
+        if (path.EndsWith(".strm", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+        {
+            try
+            {
+                var firstLine = File.ReadLines(path).FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(firstLine))
+                {
+                    return ExtractVideoIdFromUrlOrText(firstLine);
+                }
+            }
+            catch
+            {
+                // Ignore transient file read errors
+            }
+        }
+
+        return null;
+    }
+
+    public static string? ExtractVideoIdFromUrlOrText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var m = Regex.Match(text, @"(?:[?&]v=|youtu\.be\/|\/embed\/|\/stream\/|\[(?:YouTubeVideo|YouTubeAudio)-)([a-zA-Z0-9_-]{11})");
         return m.Success ? m.Groups[1].Value : null;
     }
 

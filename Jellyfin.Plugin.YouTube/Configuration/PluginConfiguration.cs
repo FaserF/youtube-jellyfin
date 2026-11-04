@@ -21,6 +21,9 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableYouTubeLibrary = true;
         EnableStrmSync = true;
         EnableMovieSupport = true;
+        EnableTrailerSupport = true;
+        EnableAutoTrailerStrmSync = true;
+        TrailerLanguage = "de-DE";
         EnableYouTubeMusic = true;
         EnableYouTubeMusicChannel = true;
         EnableYouTubeMusicLibrary = true;
@@ -57,6 +60,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableYouTubeLibrary { get; set; }
     public bool EnableStrmSync { get; set; }
     public bool EnableMovieSupport { get; set; }
+    public bool EnableTrailerSupport { get; set; }
+    public bool EnableAutoTrailerStrmSync { get; set; }
+    public string TrailerLanguage { get; set; }
     public bool EnableYouTubeMusic { get; set; }
     public bool EnableYouTubeMusicChannel { get; set; }
     public bool EnableYouTubeMusicLibrary { get; set; }

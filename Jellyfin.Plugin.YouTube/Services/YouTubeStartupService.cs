@@ -4,6 +4,7 @@ using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Configuration;
@@ -435,6 +436,11 @@ public class YouTubeStartupService : IHostedService
                 return;
             }
 
+            if (e.Item is Trailer || (e.Item.Path != null && e.Item.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase)))
+            {
+                return; // Always keep trailer playback/ratings anonymous
+            }
+
             if (e.SaveReason != UserDataSaveReason.UpdateUserRating)
             {
                 return;
@@ -493,7 +499,25 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
                 var item = _libraryManager.GetItemById(itemId);
                 if (item != null)
                 {
+                    var isTrailer = item is Trailer ||
+                                    (item.Path != null && (item.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
+                                                          item.Path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase)));
+
                     var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+                    if (string.IsNullOrWhiteSpace(videoId) && item.RemoteTrailers is { Count: > 0 })
+                    {
+                        foreach (var rt in item.RemoteTrailers)
+                        {
+                            var fromUrl = YouTubeIdKeys.ExtractVideoIdFromUrlOrText(rt.Url);
+                            if (!string.IsNullOrWhiteSpace(fromUrl))
+                            {
+                                videoId = fromUrl;
+                                isTrailer = true;
+                                break;
+                            }
+                        }
+                    }
+
                     if (!string.IsNullOrWhiteSpace(videoId))
                     {
                         var req = context.HttpContext.Request;
@@ -506,9 +530,10 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
                         var isAudio = isAudioPath || item is MediaBrowser.Controller.Entities.Audio.Audio ||
                                       (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
                                                              item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
+                        var trailerParam = isTrailer ? "?isTrailer=true" : string.Empty;
                         var target = isAudio
                             ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
-                            : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+                            : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8{trailerParam}";
 
                         context.Result = new Microsoft.AspNetCore.Mvc.RedirectResult(target);
                         return;

@@ -103,6 +103,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                     ("cat_channels", "👤 Subscribed Channels (A–Z)", "Browse all your subscribed channels and their uploads"),
                     ("cat_watch_later", "⏱️ Watch Later", "Videos saved to your Watch Later playlist"),
                     ("cat_liked", "👍 Liked Videos", "Videos you have liked on YouTube"),
+                    ("cat_trailers", "🎬 Kino- & Film-Trailer", "Current theatrical & streaming trailers in high definition (Anonymous)"),
                     ("cat_playlists", "📁 My Playlists", "Your personal and saved YouTube playlists"),
                     ("cat_ytmusic", "🎵 YouTube Music (Audio Streaming)", "Personal Supermix, Liked Songs, Listen Again & Music Charts in HQ Audio"),
                     ("cat_trending", "🔥 Trending", "Currently trending videos in your region"),
@@ -128,6 +129,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                 {
                     ("cat_trending", "🔥 Trending (Public)", "Currently trending videos on YouTube (Unlinked Public Mode)"),
                     ("cat_home", "🏠 Popular & Discover (Public)", "Popular technology, news, and entertainment videos"),
+                    ("cat_trailers", "🎬 Kino- & Film-Trailer", "Current theatrical and movie trailers in high definition"),
                     ("cat_ytmusic", "🎵 YouTube Music (Public Audio)", "Top music charts, new releases, chill & workout audio tracks"),
                     ("cat_gaming", "🎮 Gaming (Public)", "Popular gaming videos"),
                     ("cat_music", "🎵 Music (Public)", "Popular music videos"),
@@ -200,6 +202,18 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                 videos = await client.GetBrowseFeedAsync(channelId, effectiveUserKey, 25, cancellationToken).ConfigureAwait(false);
             }
 
+            var mapped = await EnrichAndMapVideosAsync(client, videos, cancellationToken).ConfigureAwait(false);
+            return new ChannelItemResult { Items = mapped, TotalRecordCount = mapped.Count };
+        }
+
+        // Cinema & Movie Trailers Folder (Always Anonymous / Guest)
+        if (query.FolderId == "cat_trailers")
+        {
+            var lang = config.TrailerLanguage ?? config.PreferredLanguage ?? "de";
+            var queryText = lang.StartsWith("de", StringComparison.OrdinalIgnoreCase)
+                ? "Offizielle Kino Trailer Deutsch 2026"
+                : "Official Movie Trailers 2026";
+            var videos = await client.SearchVideosAsync(queryText, null, 30, cancellationToken).ConfigureAwait(false);
             var mapped = await EnrichAndMapVideosAsync(client, videos, cancellationToken).ConfigureAwait(false);
             return new ChannelItemResult { Items = mapped, TotalRecordCount = mapped.Count };
         }

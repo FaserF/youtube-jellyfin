@@ -240,4 +240,24 @@ public class YouTubePluginFullParityTests
         sanitized.Should().NotContain("*");
         sanitized.Should().NotContain("|");
     }
+
+    [Fact]
+    public void PluginConfiguration_ShouldEnableTrailerSupportByDefault()
+    {
+        var config = new PluginConfiguration();
+        config.EnableTrailerSupport.Should().BeTrue();
+        config.EnableAutoTrailerStrmSync.Should().BeTrue();
+        config.TrailerLanguage.Should().Be("de-DE");
+    }
+
+    [Fact]
+    public void YouTubeIdKeys_ShouldExtractVideoIdFromTrailersAndUrls()
+    {
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText("https://www.youtube.com/watch?v=dQw4w9WgXcQ").Should().Be("dQw4w9WgXcQ");
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText("https://youtu.be/dQw4w9WgXcQ").Should().Be("dQw4w9WgXcQ");
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText("http://127.0.0.1:8096/api/youtubePlugin/stream/dQw4w9WgXcQ/master.m3u8?isTrailer=true").Should().Be("dQw4w9WgXcQ");
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText("[YouTubeVideo-dQw4w9WgXcQ]").Should().Be("dQw4w9WgXcQ");
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText(null).Should().BeNull();
+        YouTubeIdKeys.ExtractVideoIdFromUrlOrText("").Should().BeNull();
+    }
 }

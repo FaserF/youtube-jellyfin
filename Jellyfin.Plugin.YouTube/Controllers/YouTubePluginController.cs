@@ -166,7 +166,10 @@ public class YouTubePluginController : ControllerBase
     [HttpGet("stream/{videoId}/play")]
     [HttpGet("stream/{videoId}/master.m3u8")]
     [AllowAnonymous]
-    public async Task<ActionResult> PlayOrProxyStream([FromRoute] string videoId, CancellationToken cancellationToken)
+    public async Task<ActionResult> PlayOrProxyStream(
+        [FromRoute] string videoId,
+        [FromQuery] bool isTrailer = false,
+        CancellationToken cancellationToken = default)
     {
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
@@ -478,6 +481,51 @@ public class YouTubePluginController : ControllerBase
         _libraryManager.QueueLibraryScan();
         _ = Task.Run(() => playlistSyncService.SyncAllAsync(CancellationToken.None));
         return Ok(new { success = true, videosSynced = count });
+    }
+
+    [HttpPost("trailers/sync")]
+    [AllowAnonymous]
+    public async Task<ActionResult> SyncTrailers(CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        var count = await ScheduledTasks.SyncYouTubeTrailersTask.PerformSyncAsync(client, Config, _libraryManager, _logger, cancellationToken).ConfigureAwait(false);
+        _libraryManager.QueueLibraryScan();
+        return Ok(new { success = true, trailersSynced = count });
+    }
+
+    [HttpGet("trailers/{itemId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult> GetItemTrailer([FromRoute] string itemId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(itemId, out var id) || _libraryManager.GetItemById(id) is not { } item)
+        {
+            return NotFound(new { error = "Item not found" });
+        }
+
+        var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+        if (string.IsNullOrWhiteSpace(videoId) && item.RemoteTrailers is { Count: > 0 })
+        {
+            videoId = item.RemoteTrailers.Select(rt => YouTubeIdKeys.ExtractVideoIdFromUrlOrText(rt.Url)).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+        }
+
+        if (string.IsNullOrWhiteSpace(videoId))
+        {
+            using var client = CreateClient();
+            var lang = Config.TrailerLanguage ?? "de-DE";
+            var query = lang.StartsWith("de", StringComparison.OrdinalIgnoreCase)
+                ? $"{item.Name} {item.ProductionYear} Offizieller Trailer Deutsch"
+                : $"{item.Name} {item.ProductionYear} Official Trailer";
+            var results = await client.SearchVideosAsync(query, null, 3, cancellationToken).ConfigureAwait(false);
+            videoId = results.FirstOrDefault()?.VideoId;
+        }
+
+        if (string.IsNullOrWhiteSpace(videoId))
+        {
+            return NotFound(new { error = "No trailer found" });
+        }
+
+        var streamUrl = $"/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true";
+        return Ok(new { success = true, itemId, videoId, streamUrl });
     }
 
     private string CleanVideoId(string raw)

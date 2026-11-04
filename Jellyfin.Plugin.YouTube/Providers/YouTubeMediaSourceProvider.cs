@@ -42,12 +42,30 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
 
     public async Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
     {
-        if (item is not Episode && item is not Movie && item is not Audio)
+        var isTrailer = item is Trailer ||
+                        (item.Path != null && (item.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
+                                              item.Path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase)));
+
+        if (item is not Episode && item is not Movie && item is not Audio && item is not Trailer && item is not Series && !isTrailer)
         {
             return Enumerable.Empty<MediaSourceInfo>();
         }
 
         var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
+        if (string.IsNullOrWhiteSpace(videoId) && item.RemoteTrailers is { Count: > 0 })
+        {
+            foreach (var rt in item.RemoteTrailers)
+            {
+                var fromUrl = YouTubeIdKeys.ExtractVideoIdFromUrlOrText(rt.Url);
+                if (!string.IsNullOrWhiteSpace(fromUrl))
+                {
+                    videoId = fromUrl;
+                    isTrailer = true;
+                    break;
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(videoId))
         {
             return Enumerable.Empty<MediaSourceInfo>();
@@ -144,11 +162,15 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     streams.AddRange(audioStreams);
                     streams.AddRange(subtitleStreams);
 
+                    var streamUrl = isTrailer
+                        ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true"
+                        : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+
                     allSources.Add(new MediaSourceInfo
                     {
                         Id = $"{item.Id:N}_{fmt.Height}",
-                        Name = $"{item.Name} ({fmt.Label})",
-                        Path = $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8",
+                        Name = isTrailer ? $"{item.Name} (Trailer - {fmt.Label})" : $"{item.Name} ({fmt.Label})",
+                        Path = streamUrl,
                         Protocol = MediaProtocol.Http,
                         Container = "m3u8",
                         SupportsDirectPlay = true,
@@ -186,11 +208,15 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 streams.AddRange(audioStreams);
                 streams.AddRange(subtitleStreams);
 
+                var fallbackUrl = isTrailer
+                    ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true"
+                    : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+
                 allSources.Add(new MediaSourceInfo
                 {
                     Id = item.Id.ToString("N"),
-                    Name = $"{item.Name} ({height}p Ad-Free)",
-                    Path = $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8",
+                    Name = isTrailer ? $"{item.Name} (Trailer - {height}p)" : $"{item.Name} ({height}p Ad-Free)",
+                    Path = fallbackUrl,
                     Protocol = MediaProtocol.Http,
                     Container = "m3u8",
                     SupportsDirectPlay = true,

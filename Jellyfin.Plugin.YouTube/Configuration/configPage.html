@@ -143,6 +143,27 @@
                     </div>
 
                     <div class="verticalSection">
+                        <h2 class="sectionTitle">🎬 Movie &amp; TV Series Trailers (Emby Cinema Mode Parity)</h2>
+                        <p>Provides native, 1-click YouTube trailer playback for all Movies and TV Series in Jellyfin libraries. Automatically creates lightweight companion <code>-trailer.strm</code> files and resolves TMDb remote trailers anonymously as guest with zero user-account scrobbling or history pollution.</p>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableTrailers" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Native Movie &amp; TV Trailer Playback Support (Default: ON)</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnableAutoTrailerSync" type="checkbox" is="emby-checkbox" />
+                                <span>Automatically Sync Companion .trailer.strm Files for Movies &amp; Series</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtTrailerLang">Preferred Trailer Search Language (e.g. de-DE, en-US)</label>
+                            <input id="txtTrailerLang" type="text" is="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
                         <h2 class="sectionTitle">🌐 Universal Multi-User &amp; Primary Account Settings</h2>
                         <div class="inputContainer">
                             <label class="inputLabel" for="txtPrimaryUser">Primary Jellyfin Username (Auto-Mapped to Seeded Account)</label>
@@ -220,6 +241,9 @@
                         document.getElementById("selectYtmBitrate").value = String(config.YouTubeMusicPreferredBitrate || 256);
                         document.getElementById("txtYtmMaxItems").value = String(config.YouTubeMusicMaxItemsPerFeed || 25);
                         document.getElementById("txtPrimaryUser").value = config.PrimaryJellyfinUser || "";
+                        document.getElementById("chkEnableTrailers").checked = config.EnableTrailerSupport !== false;
+                        document.getElementById("chkEnableAutoTrailerSync").checked = config.EnableAutoTrailerStrmSync !== false;
+                        document.getElementById("txtTrailerLang").value = config.TrailerLanguage || "de-DE";
                         document.getElementById("txtPreferredLang").value = config.PreferredLanguage || "de-DE";
                         document.getElementById("txtPreferredRegion").value = config.PreferredRegion || "DE";
                         Dashboard.hideLoadingMsg();
@@ -278,6 +302,9 @@
                         config.YouTubeMusicPreferredBitrate = parseInt(document.getElementById("selectYtmBitrate").value, 10) || 256;
                         config.YouTubeMusicMaxItemsPerFeed = parseInt(document.getElementById("txtYtmMaxItems").value, 10) || 25;
                         config.PrimaryJellyfinUser = document.getElementById("txtPrimaryUser").value.trim();
+                        config.EnableTrailerSupport = document.getElementById("chkEnableTrailers").checked;
+                        config.EnableAutoTrailerStrmSync = document.getElementById("chkEnableAutoTrailerSync").checked;
+                        config.TrailerLanguage = document.getElementById("txtTrailerLang").value.trim() || "de-DE";
                         config.PreferredLanguage = document.getElementById("txtPreferredLang").value.trim() || "de-DE";
                         config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "DE";
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
