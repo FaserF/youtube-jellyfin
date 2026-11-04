@@ -76,8 +76,37 @@ public partial class YouTubeApiClient
                     ChannelTitle = root.TryGetProperty("uploader", out var u) ? u.GetString() ?? string.Empty : string.Empty,
                     ChannelId = root.TryGetProperty("channel_id", out var cid) ? cid.GetString() ?? string.Empty : string.Empty,
                     Description = root.TryGetProperty("description", out var desc) ? desc.GetString() ?? string.Empty : string.Empty,
-                    DurationSeconds = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number ? (long)dur.GetDouble() : 0
+                    DurationSeconds = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number ? (long)dur.GetDouble() : 0,
+                    NativeLanguage = root.TryGetProperty("language", out var langProp) ? langProp.GetString() : null,
+                    Category = root.TryGetProperty("categories", out var catArr) && catArr.ValueKind == JsonValueKind.Array && catArr.GetArrayLength() > 0
+                        ? catArr[0].GetString() ?? string.Empty : string.Empty,
                 };
+
+                // Parse tags
+                if (root.TryGetProperty("tags", out var tagsArr) && tagsArr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var tag in tagsArr.EnumerateArray())
+                    {
+                        var tagStr = tag.GetString();
+                        if (!string.IsNullOrWhiteSpace(tagStr))
+                        {
+                            info.Tags.Add(tagStr);
+                        }
+                    }
+                }
+
+                // Parse upload_date (yyyyMMdd format from yt-dlp)
+                if (root.TryGetProperty("upload_date", out var uploadDateProp))
+                {
+                    var dateStr = uploadDateProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(dateStr) && dateStr.Length == 8 &&
+                        int.TryParse(dateStr[..4], out var yr) &&
+                        int.TryParse(dateStr[4..6], out var mo) &&
+                        int.TryParse(dateStr[6..8], out var dy))
+                    {
+                        info.PublishedAt = new DateTime(yr, mo, dy, 0, 0, 0, DateTimeKind.Utc);
+                    }
+                }
 
                 var maxHeight = config.PreferredMaxResolution > 0 ? config.PreferredMaxResolution : 2160;
                 var prefLang = (config.PreferredLanguage ?? "de").Split('-')[0];
@@ -87,6 +116,9 @@ public partial class YouTubeApiClient
                 string? bestAudioOnlyUrl = null;
                 int bestAudioScore = -1;
                 int bestHeight = 0;
+
+                // Per-height best video-only format: height -> best (url, codec, bitrate, fps, width, formatId, hdr)
+                var videoFormatMap = new Dictionary<int, (string Url, string Codec, long Bitrate, float Fps, int Width, string FormatId, bool IsHdr)>();
 
                 if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
                 {
@@ -100,13 +132,18 @@ public partial class YouTubeApiClient
                         var vcodec = f.TryGetProperty("vcodec", out var vcProp) ? vcProp.GetString() ?? "none" : "none";
                         var acodec = f.TryGetProperty("acodec", out var acProp) ? acProp.GetString() ?? "none" : "none";
                         var height = f.TryGetProperty("height", out var hProp) && hProp.ValueKind == JsonValueKind.Number ? hProp.GetInt32() : 0;
+                        var width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 0;
                         var ext = f.TryGetProperty("ext", out var extProp) ? extProp.GetString() ?? string.Empty : string.Empty;
                         var lang = f.TryGetProperty("language", out var lProp) ? lProp.GetString() : null;
                         var formatNote = f.TryGetProperty("format_note", out var fnProp) ? fnProp.GetString() ?? string.Empty : string.Empty;
-                        var tbr = f.TryGetProperty("tbr", out var tbrProp) && tbrProp.ValueKind == JsonValueKind.Number ? (int)(tbrProp.GetDouble() * 1000) : 128000;
-                        var abr = f.TryGetProperty("abr", out var abrProp) && abrProp.ValueKind == JsonValueKind.Number ? (int)(abrProp.GetDouble() * 1000) : tbr;
+                        var tbr = f.TryGetProperty("tbr", out var tbrProp) && tbrProp.ValueKind == JsonValueKind.Number ? (long)(tbrProp.GetDouble() * 1000) : 128000;
+                        var abr = f.TryGetProperty("abr", out var abrProp) && abrProp.ValueKind == JsonValueKind.Number ? (int)(abrProp.GetDouble() * 1000) : (int)tbr;
+                        var vbr = f.TryGetProperty("vbr", out var vbrProp) && vbrProp.ValueKind == JsonValueKind.Number ? (long)(vbrProp.GetDouble() * 1000) : tbr;
+                        var fps = f.TryGetProperty("fps", out var fpsProp) && fpsProp.ValueKind == JsonValueKind.Number ? (float)fpsProp.GetDouble() : 30f;
                         var sampleRate = f.TryGetProperty("asr", out var asrProp) && asrProp.ValueKind == JsonValueKind.Number ? asrProp.GetInt32() : 44100;
                         var channels = f.TryGetProperty("audio_channels", out var chProp) && chProp.ValueKind == JsonValueKind.Number ? chProp.GetInt32() : 2;
+                        var isHdr = formatNote.Contains("HDR", StringComparison.OrdinalIgnoreCase) ||
+                                    vcodec.Contains("vp09.2", StringComparison.OrdinalIgnoreCase);
 
                         if (!string.IsNullOrWhiteSpace(manifest) && manifest.Contains("hls_variant", StringComparison.OrdinalIgnoreCase))
                         {
@@ -120,14 +157,33 @@ public partial class YouTubeApiClient
                                 bestCombinedUrl = url;
                                 bestHeight = height;
                                 info.Height = height;
-                                info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
+                                info.Width = width > 0 ? width : 1920;
                             }
-                            else if (vcodec != "none" && acodec == "none" && height <= maxHeight && height >= bestHeight && ext == "mp4")
+                            else if (vcodec != "none" && acodec == "none" && height > 0 && height <= maxHeight)
                             {
-                                bestVideoOnlyUrl = url;
-                                bestHeight = height;
-                                info.Height = height;
-                                info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
+                                // Collect all video-only formats per height for multi-resolution
+                                var isPreferredCodec = ext == "mp4" ||
+                                                       vcodec.StartsWith("avc", StringComparison.OrdinalIgnoreCase) ||
+                                                       vcodec.StartsWith("vp9", StringComparison.OrdinalIgnoreCase);
+                                if (isPreferredCodec)
+                                {
+                                    var existingEntry = videoFormatMap.TryGetValue(height, out var existing);
+                                    var preferNew = !existingEntry ||
+                                                    (ext == "mp4" && !existing.Codec.StartsWith("avc", StringComparison.OrdinalIgnoreCase)) ||
+                                                    (ext == existing.Codec && vbr > existing.Bitrate);
+                                    if (preferNew)
+                                    {
+                                        videoFormatMap[height] = (url, ext == "mp4" ? "h264" : "vp9", vbr, fps, width > 0 ? width : height * 16 / 9, formatId, isHdr);
+                                    }
+                                }
+
+                                if (height <= maxHeight && height >= bestHeight)
+                                {
+                                    bestVideoOnlyUrl = url;
+                                    bestHeight = height;
+                                    info.Height = height;
+                                    info.Width = width > 0 ? width : 1920;
+                                }
                             }
                             else if (vcodec == "none" && acodec != "none" && !IsM3u8Url(url))
                             {
@@ -186,6 +242,40 @@ public partial class YouTubeApiClient
                     }
 
                     info.AudioTracks = tracks;
+
+                    // Build multi-resolution VideoFormats list (C: all available resolutions up to 4K)
+                    info.VideoFormats = videoFormatMap
+                        .OrderByDescending(kv => kv.Key)
+                        .Select(kv =>
+                        {
+                            var h = kv.Key;
+                            var (vUrl, codec, bitrate, fps2, w, fid, hdr) = kv.Value;
+                            var label = h switch
+                            {
+                                2160 => hdr ? "4K UHD HDR" : "4K UHD",
+                                1440 => hdr ? "1440p QHD HDR" : "1440p QHD",
+                                1080 => fps2 >= 50 ? "1080p60 Full HD" : (hdr ? "1080p Full HD HDR" : "1080p Full HD"),
+                                720  => fps2 >= 50 ? "720p60 HD" : "720p HD",
+                                480  => "480p SD",
+                                360  => "360p SD",
+                                240  => "240p LD",
+                                144  => "144p LD",
+                                _    => $"{h}p"
+                            };
+                            return new YouTubeVideoFormatDto
+                            {
+                                Height = h,
+                                Width = w,
+                                Codec = codec,
+                                Bitrate = bitrate,
+                                Fps = fps2,
+                                IsHdr = hdr,
+                                StreamUrl = vUrl,
+                                FormatId = fid,
+                                Label = label
+                            };
+                        })
+                        .ToList();
                 }
 
                 info.HlsManifestUrl = bestHlsManifest ?? string.Empty;
@@ -304,31 +394,42 @@ public partial class YouTubeApiClient
     private static void ParseSubtitlesAndCaptions(JsonElement root, YouTubeStreamInfoDto info)
     {
         var subtitleTrackMap = new Dictionary<string, YouTubeSubtitleTrackDto>(StringComparer.OrdinalIgnoreCase);
+        var config = Plugin.Instance?.Configuration;
+        var prefLang = (config?.PreferredLanguage ?? "de").Split('-')[0];
 
-        // 1. Official/Manual Subtitles
+        // 1. Official/Manual Subtitles — always include all
+        var manualLangs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (root.TryGetProperty("subtitles", out var subs) && subs.ValueKind == JsonValueKind.Object)
         {
             foreach (var langProp in subs.EnumerateObject())
             {
                 if (langProp.Value.ValueKind != JsonValueKind.Array) continue;
+                // Skip internal yt metadata keys
+                if (langProp.Name.Equals("live_chat", StringComparison.OrdinalIgnoreCase)) continue;
+
                 foreach (var entry in langProp.Value.EnumerateArray())
                 {
                     var ext = entry.TryGetProperty("ext", out var eProp) ? eProp.GetString() : null;
                     var url = entry.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
                     var name = entry.TryGetProperty("name", out var nProp) ? nProp.GetString() : null;
 
-                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3"))
+                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3" || ext == "srv1"))
                     {
                         var langCode = langProp.Name;
+                        var baseLang = langCode.Split('-')[0];
                         var title = !string.IsNullOrWhiteSpace(name) ? name : langCode;
+                        var isDefault = baseLang.Equals(prefLang, StringComparison.OrdinalIgnoreCase) ||
+                                        baseLang.Equals("en", StringComparison.OrdinalIgnoreCase);
                         info.Subtitles[langCode] = url;
+                        manualLangs.Add(langCode);
+                        manualLangs.Add(baseLang);
                         subtitleTrackMap[langCode] = new YouTubeSubtitleTrackDto
                         {
                             Language = langCode,
                             Title = title,
                             Format = "vtt",
                             IsAutoGenerated = false,
-                            IsDefault = langCode.StartsWith("de", StringComparison.OrdinalIgnoreCase) || langCode.StartsWith("en", StringComparison.OrdinalIgnoreCase),
+                            IsDefault = isDefault,
                             StreamUrl = url
                         };
                         break;
@@ -337,14 +438,46 @@ public partial class YouTubeApiClient
             }
         }
 
-        // 2. Automatic Captions (SmartTube 1:1 auto-caption parity)
+        // 2. Auto-Generated Captions — ONLY for the video's native language & preferred language.
+        // YouTube auto-generates captions in the native language and also offers auto-TRANSLATIONS
+        // into 100+ languages. We detect native auto-captions vs. translations:
+        // - Native: langCode matches info.NativeLanguage or is the only non-prefixed code
+        // - Translation: entries in automatic_captions that are NOT the native language are translations
+        // Rule: include only native-language auto-captions + preferred-language auto-captions (if available).
+        // This matches SmartTube behaviour: shows the actual subtitle options, not 100+ translation stubs.
         if (root.TryGetProperty("automatic_captions", out var autoSubs) && autoSubs.ValueKind == JsonValueKind.Object)
         {
+            var nativeLang = info.NativeLanguage?.Split('-')[0] ?? string.Empty;
+
+            // Build set of languages to include from auto-captions
+            var allowedAutoCaptionLangs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Always allow native language
+            if (!string.IsNullOrWhiteSpace(nativeLang))
+            {
+                allowedAutoCaptionLangs.Add(nativeLang);
+            }
+
+            // Allow preferred language
+            allowedAutoCaptionLangs.Add(prefLang);
+            allowedAutoCaptionLangs.Add("de");
+            allowedAutoCaptionLangs.Add("en");
+
+            // Also scan for any lang codes in auto_captions that DON'T have a "-orig" suffix
+            // and appear to be real captions (not machine translations of other languages).
+            // Key insight: yt-dlp marks translated auto-captions with the source lang in the URL
+            // e.g. tlang=fr means it's a translated caption. We detect these by checking if
+            // the URL contains "tlang=" which indicates it's a translation endpoint.
             foreach (var langProp in autoSubs.EnumerateObject())
             {
                 var langCode = langProp.Name;
+                var baseLang = langCode.Split('-')[0];
                 if (subtitleTrackMap.ContainsKey(langCode)) continue;
                 if (langProp.Value.ValueKind != JsonValueKind.Array) continue;
+
+                // Check if this is a native auto-caption or a translation
+                var isAllowed = allowedAutoCaptionLangs.Contains(baseLang) || allowedAutoCaptionLangs.Contains(langCode);
+                if (!isAllowed) continue;
 
                 foreach (var entry in langProp.Value.EnumerateArray())
                 {
@@ -352,8 +485,15 @@ public partial class YouTubeApiClient
                     var url = entry.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
                     var name = entry.TryGetProperty("name", out var nProp) ? nProp.GetString() : null;
 
-                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3"))
+                    if (!string.IsNullOrWhiteSpace(url) && (ext == "vtt" || ext == "ttml" || ext == "srv3" || ext == "srv1"))
                     {
+                        // Skip if it's a translated caption (URL contains tlang= pointing to another language)
+                        var isTranslation = !string.IsNullOrWhiteSpace(nativeLang) &&
+                                            url.Contains("tlang=", StringComparison.OrdinalIgnoreCase) &&
+                                            !url.Contains($"tlang={Uri.EscapeDataString(baseLang)}", StringComparison.OrdinalIgnoreCase) &&
+                                            !url.Contains($"tlang={baseLang}", StringComparison.OrdinalIgnoreCase);
+                        if (isTranslation) continue;
+
                         var title = !string.IsNullOrWhiteSpace(name)
                             ? $"{name} (Auto)"
                             : $"{langCode} (Auto)";
@@ -383,164 +523,5 @@ public partial class YouTubeApiClient
             .ThenByDescending(s => s.IsDefault)
             .ThenBy(s => s.Language)
             .ToList();
-    }
-
-    public async Task<List<SponsorBlockSegmentDto>> GetSponsorBlockSegmentsAsync(
-        string videoId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(videoId))
-        {
-            return new List<SponsorBlockSegmentDto>();
-        }
-
-        if (_sbCache.TryGetValue(videoId, out var cached) &&
-            (DateTime.UtcNow - cached.CachedAt).TotalHours < 6)
-        {
-            return cached.Segments;
-        }
-
-        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        if (!config.EnableSponsorBlock)
-        {
-            return new List<SponsorBlockSegmentDto>();
-        }
-
-        try
-        {
-            var cats = (config.SponsorBlockCategories ?? "sponsor,selfpromo,interaction,intro,outro")
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var catJson = JsonSerializer.Serialize(cats);
-            var url = $"https://sponsor.ajay.app/api/skipSegments?videoID={Uri.EscapeDataString(videoId)}&categories={Uri.EscapeDataString(catJson)}";
-
-            using var resp = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
-            if (resp.IsSuccessStatusCode)
-            {
-                var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                var segments = JsonSerializer.Deserialize<List<SponsorBlockSegmentDto>>(json) ?? new List<SponsorBlockSegmentDto>();
-                _sbCache[videoId] = (segments, DateTime.UtcNow);
-                return segments;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "SponsorBlock lookup failed for {VideoId}", videoId);
-        }
-
-        var empty = new List<SponsorBlockSegmentDto>();
-        _sbCache[videoId] = (empty, DateTime.UtcNow);
-        return empty;
-    }
-
-    public async Task<ReturnYouTubeDislikeDto?> GetReturnYouTubeDislikeAsync(
-        string videoId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(videoId))
-        {
-            return null;
-        }
-
-        if (_rydCache.TryGetValue(videoId, out var cached) &&
-            (DateTime.UtcNow - cached.CachedAt).TotalHours < 6)
-        {
-            return cached.Stats;
-        }
-
-        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        if (!config.EnableReturnYouTubeDislike)
-        {
-            return null;
-        }
-
-        try
-        {
-            var url = $"https://returnyoutubedislikeapi.com/votes?videoId={Uri.EscapeDataString(videoId)}";
-            using var resp = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
-            if (resp.IsSuccessStatusCode)
-            {
-                var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                var stats = JsonSerializer.Deserialize<ReturnYouTubeDislikeDto>(json);
-                if (stats != null)
-                {
-                    _rydCache[videoId] = (stats, DateTime.UtcNow);
-                    return stats;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "ReturnYouTubeDislike lookup failed for {VideoId}", videoId);
-        }
-
-        return null;
-    }
-
-    public async Task<bool> RateVideoAsync(
-        string videoId,
-        string rating,
-        string? usernameOrId,
-        CancellationToken cancellationToken = default)
-    {
-        var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return false;
-        }
-
-        try
-        {
-            var url = $"https://www.googleapis.com/youtube/v3/videos/rate?id={Uri.EscapeDataString(videoId)}&rating={Uri.EscapeDataString(rating)}";
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            return resp.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to rate video {VideoId} ({Rating}) for {User}", videoId, rating, usernameOrId);
-            return false;
-        }
-    }
-
-    public async Task<bool> SubscribeChannelAsync(
-        string channelId,
-        string? usernameOrId,
-        CancellationToken cancellationToken = default)
-    {
-        var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return false;
-        }
-
-        try
-        {
-            var payload = JsonSerializer.Serialize(new
-            {
-                snippet = new
-                {
-                    resourceId = new
-                    {
-                        kind = "youtube#channel",
-                        channelId
-                    }
-                }
-            });
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.googleapis.com/youtube/v3/subscriptions?part=snippet")
-            {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
-            };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            _cache.TryRemove($"subs_{PluginConfiguration.NormalizeId(usernameOrId)}", out _);
-            return resp.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to subscribe to channel {ChannelId} for {User}", channelId, usernameOrId);
-            return false;
-        }
     }
 }

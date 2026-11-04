@@ -55,11 +55,43 @@ public class YouTubeStreamInfoDto
     public string AudioCodec { get; set; } = "aac";
     public int Width { get; set; } = 1920;
     public int Height { get; set; } = 1080;
+
+    /// <summary>Language code yt-dlp detected as the native video language (e.g. "de", "en").</summary>
+    public string? NativeLanguage { get; set; }
+
+    /// <summary>All distinct available resolutions (heights) sorted descending (e.g. 2160, 1080, 720, 480, 360).</summary>
+    public List<YouTubeVideoFormatDto> VideoFormats { get; set; } = new();
+
     public Dictionary<string, string> Subtitles { get; set; } = new();
     public List<YouTubeSubtitleTrackDto> SubtitleTracks { get; set; } = new();
     public List<YouTubeAudioTrackDto> AudioTracks { get; set; } = new();
     public List<SponsorBlockSegmentDto> SponsorSegments { get; set; } = new();
     public ReturnYouTubeDislikeDto? DislikeStats { get; set; }
+
+    /// <summary>YouTube video tags (used as Jellyfin tags/genres).</summary>
+    public List<string> Tags { get; set; } = new();
+
+    /// <summary>YouTube video category (e.g. "Education", "Entertainment").</summary>
+    public string Category { get; set; } = string.Empty;
+
+    /// <summary>Actual publish date from yt-dlp (upload_date field).</summary>
+    public DateTime? PublishedAt { get; set; }
+
+    /// <summary>Like percentage 0-100 derived from RYD (used as CommunityRating * 10).</summary>
+    public float LikePercent { get; set; }
+}
+
+public class YouTubeVideoFormatDto
+{
+    public int Height { get; set; }
+    public int Width { get; set; }
+    public string Codec { get; set; } = "h264";
+    public long Bitrate { get; set; }
+    public float Fps { get; set; }
+    public bool IsHdr { get; set; }
+    public string StreamUrl { get; set; } = string.Empty;
+    public string FormatId { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty; // "1080p HD", "2160p 4K HDR"
 }
 
 public class YouTubeAudioTrackDto

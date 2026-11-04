@@ -57,7 +57,7 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         return results;
     }
 
-    public Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
+    public async Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
     {
         var result = new MetadataResult<Episode>();
         var videoId = YouTubeIdKeys.GetVideoId(info.ProviderIds)
@@ -65,7 +65,7 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
 
         if (string.IsNullOrWhiteSpace(videoId))
         {
-            return Task.FromResult(result);
+            return result;
         }
 
         var config = Config;
@@ -77,38 +77,110 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
             ? cleanTitle.Split(" - ", 2)[0].Trim()
             : CleanFolderDisplayName(parentFolder);
 
-        var isUpcomingShow = parentFolder.Contains("Upcoming", StringComparison.OrdinalIgnoreCase);
-        var premiereDate = isUpcomingShow
-            ? DateTime.UtcNow.Date.AddDays((parsedEpNum % 7) + 1)
-            : DateTime.UtcNow.Date;
+        // D: Fetch real YT metadata for publish date, description, tags
+        DateTime? publishedAt = null;
+        string? richDescription = null;
+        float communityRating = 7.5f;
+        var tags = new List<string>();
+        var category = string.Empty;
+
+        try
+        {
+            using var client = CreateClient();
+
+            // Try stream info first (has upload_date from yt-dlp, faster)
+            var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
+            if (streamInfo != null)
+            {
+                publishedAt = streamInfo.PublishedAt;
+                channelFromTitle = !string.IsNullOrWhiteSpace(streamInfo.ChannelTitle) ? streamInfo.ChannelTitle : channelFromTitle;
+                tags = streamInfo.Tags.Take(10).ToList();
+                category = streamInfo.Category;
+
+                if (streamInfo.DislikeStats != null && streamInfo.DislikeStats.Likes + streamInfo.DislikeStats.Dislikes > 0)
+                {
+                    var total = streamInfo.DislikeStats.Likes + streamInfo.DislikeStats.Dislikes;
+                    communityRating = (float)Math.Round(streamInfo.DislikeStats.Likes / (double)total * 10, 1);
+                    communityRating = Math.Clamp(communityRating, 0f, 10f);
+                }
+
+                // E: Rich description = stats header + blank line + YT description
+                richDescription = YouTubeApiClient.FormatRichOverview(
+                    new Models.YouTubeVideoItem
+                    {
+                        VideoId = videoId,
+                        Title = cleanTitle,
+                        ChannelTitle = streamInfo.ChannelTitle,
+                        Description = streamInfo.Description,
+                        PublishedTimeText = streamInfo.PublishedAt?.ToString("yyyy-MM-dd") ?? string.Empty,
+                        DislikeStats = streamInfo.DislikeStats,
+                    },
+                    streamInfo.DislikeStats,
+                    streamInfo.SponsorSegments);
+
+                richDescription += $"\n\n🔗 https://www.youtube.com/watch?v={videoId}";
+            }
+
+            // Fallback: YouTube Data API for more accurate publish date
+            if (publishedAt == null)
+            {
+                var meta = await client.GetVideoMetadataAsync(videoId, cancellationToken).ConfigureAwait(false);
+                if (meta?.PublishedAt != null)
+                {
+                    publishedAt = meta.PublishedAt;
+                    if (string.IsNullOrWhiteSpace(richDescription))
+                    {
+                        richDescription = YouTubeApiClient.FormatRichOverview(meta, meta.DislikeStats, meta.SponsorSegments);
+                        richDescription += $"\n\n🔗 https://www.youtube.com/watch?v={videoId}";
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Timeout — use fallback
+        }
+
+        var premiereDate = publishedAt ?? DateTime.UtcNow.Date;
+        var overview = richDescription ?? $"👤 {channelFromTitle}  •  🔗 https://www.youtube.com/watch?v={videoId}\n\nYouTube Ad-Free Stream ({videoId})";
 
         var episode = new Episode
         {
             Name = cleanTitle,
-            Overview = $"👤 {channelFromTitle}  •  🔗 https://www.youtube.com/watch?v={videoId}\n\nYouTube SmartTube Ad-Free Stream ({videoId})",
+            Overview = overview,
             IndexNumber = parsedEpNum,
             ParentIndexNumber = parsedSeasonNum,
             PremiereDate = premiereDate,
             ProductionYear = premiereDate.Year,
-            CommunityRating = 8.5f,
-            Width = 1920,
-            Height = 1080
+            CommunityRating = communityRating
         };
 
+        // F: Map YT channel → Jellyfin Studio
         if (!string.IsNullOrWhiteSpace(channelFromTitle))
         {
             episode.AddStudio(channelFromTitle);
         }
 
+        // F: Map YT category → Genre
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            episode.AddGenre(category);
+        }
+
         episode.AddGenre("YouTube");
 
-        // Ensure every episode has a unique ProviderId so Jellyfin never merges S01E01 across different YouTube channels!
+        // F: Map YT tags → Jellyfin Tags (up to 10)
+        if (tags.Count > 0)
+        {
+            episode.Tags = tags.Take(10).ToArray();
+        }
+
         YouTubeIdKeys.SetVideoId(episode, videoId);
         episode.SetProviderId("YouTubeEpisodeKey", $"{parentFolder}_{videoId}");
 
         result.Item = episode;
         result.HasMetadata = true;
-        return Task.FromResult(result);
+        return result;
     }
 
     private static string CleanFolderDisplayName(string? rawName)
