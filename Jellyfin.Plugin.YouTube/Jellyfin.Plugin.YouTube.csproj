@@ -59,6 +59,8 @@
     <EmbeddedResource Include="Features\Script\youtubePlugin.js" />
     <None Remove="thumb.png" />
     <EmbeddedResource Include="thumb.png" />
+    <None Remove="Artwork\*.png" />
+    <EmbeddedResource Include="Artwork\*.png" />
     <None Update="*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

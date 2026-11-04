@@ -66,6 +66,7 @@ public class YouTubeStreamInfoDto
     public List<YouTubeSubtitleTrackDto> SubtitleTracks { get; set; } = new();
     public List<YouTubeAudioTrackDto> AudioTracks { get; set; } = new();
     public List<SponsorBlockSegmentDto> SponsorSegments { get; set; } = new();
+    public List<YouTubeChapterDto> Chapters { get; set; } = new();
     public ReturnYouTubeDislikeDto? DislikeStats { get; set; }
 
     /// <summary>YouTube video tags (used as Jellyfin tags/genres).</summary>
@@ -92,6 +93,13 @@ public class YouTubeVideoFormatDto
     public string StreamUrl { get; set; } = string.Empty;
     public string FormatId { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty; // "1080p HD", "2160p 4K HDR"
+}
+
+public class YouTubeChapterDto
+{
+    public string Title { get; set; } = string.Empty;
+    public double StartSeconds { get; set; }
+    public double EndSeconds { get; set; }
 }
 
 public class YouTubeAudioTrackDto

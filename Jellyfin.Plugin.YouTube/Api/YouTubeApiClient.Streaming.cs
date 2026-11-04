@@ -108,6 +108,26 @@ public partial class YouTubeApiClient
                     }
                 }
 
+                // Parse native YouTube chapters from uploader
+                if (root.TryGetProperty("chapters", out var chaps) && chaps.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var ch in chaps.EnumerateArray())
+                    {
+                        var start = ch.TryGetProperty("start_time", out var stProp) && stProp.ValueKind == JsonValueKind.Number ? stProp.GetDouble() : 0;
+                        var end = ch.TryGetProperty("end_time", out var etProp) && etProp.ValueKind == JsonValueKind.Number ? etProp.GetDouble() : 0;
+                        var title = ch.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
+                        if (!string.IsNullOrWhiteSpace(title))
+                        {
+                            info.Chapters.Add(new YouTubeChapterDto
+                            {
+                                Title = title,
+                                StartSeconds = start,
+                                EndSeconds = end
+                            });
+                        }
+                    }
+                }
+
                 var maxHeight = config.PreferredMaxResolution > 0 ? config.PreferredMaxResolution : 2160;
                 var prefLang = (config.PreferredLanguage ?? "de").Split('-')[0];
                 string? bestHlsManifest = null;

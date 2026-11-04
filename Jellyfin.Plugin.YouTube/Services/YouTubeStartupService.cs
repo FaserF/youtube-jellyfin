@@ -15,11 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.YouTube.Services;
 
 /// <summary>
-/// Startup &amp; background service that:
-/// 1. Auto-imports existing Google/YouTube OAuth credentials for 'fabian' if not yet configured.
-/// 2. Injects &lt;script src="/api/youtubePlugin/Script"&gt;&lt;/script&gt; into Jellyfin's index.html.
-/// 3. Hooks ISessionManager.PlaybackProgress for automatic server-side SponsorBlock skipping on Android TV &amp; all clients!
-/// 4. Hooks IUserDataManager.UserDataSaved so marking a YouTube video as Favorite (♥️) in Jellyfin automatically Likes it on YouTube!
+/// Startup &amp; background service for YouTube OAuth, script injection, and library artwork.
 /// </summary>
 public class YouTubeStartupService : IHostedService
 {
@@ -183,7 +179,7 @@ public class YouTubeStartupService : IHostedService
         try
         {
             Directory.CreateDirectory(config.StrmLibraryPath);
-            EnsureLibraryArtwork(config.StrmLibraryPath);
+            EnsureLibraryArtwork(config.StrmLibraryPath, isMusic: false);
 
             var vfs = _libraryManager.GetVirtualFolders();
             var existingVf = vfs.FirstOrDefault(v => string.Equals(v.Name, "YouTube", StringComparison.OrdinalIgnoreCase));
@@ -225,7 +221,7 @@ public class YouTubeStartupService : IHostedService
                 _libraryManager.QueueLibraryScan();
             }
 
-            EnsureLibraryArtwork("/config/data/root/default/YouTube");
+            EnsureLibraryArtwork("/config/data/root/default/YouTube", isMusic: false);
 
             if (config.EnableStrmSync)
             {
@@ -264,7 +260,7 @@ public class YouTubeStartupService : IHostedService
         try
         {
             Directory.CreateDirectory(config.YouTubeMusicLibraryPath);
-            EnsureLibraryArtwork(config.YouTubeMusicLibraryPath);
+            EnsureLibraryArtwork(config.YouTubeMusicLibraryPath, isMusic: true);
 
             var vfs = _libraryManager.GetVirtualFolders();
             var existingVf = vfs.FirstOrDefault(v => string.Equals(v.Name, "YouTube Music", StringComparison.OrdinalIgnoreCase));
@@ -295,7 +291,7 @@ public class YouTubeStartupService : IHostedService
                 _libraryManager.QueueLibraryScan();
             }
 
-            EnsureLibraryArtwork("/config/data/root/default/YouTube Music");
+            EnsureLibraryArtwork("/config/data/root/default/YouTube Music", isMusic: true);
         }
         catch (Exception ex)
         {
@@ -313,23 +309,47 @@ public class YouTubeStartupService : IHostedService
             ImageFetcherOrder = new[] { "YouTube" }
         };
 
-    private static void EnsureLibraryArtwork(string targetDir)
+    private static void EnsureLibraryArtwork(string targetDir, bool isMusic)
     {
         try
         {
-            var asmDir = Path.GetDirectoryName(typeof(YouTubeStartupService).Assembly.Location);
-            if (string.IsNullOrWhiteSpace(asmDir))
+            if (string.IsNullOrWhiteSpace(targetDir))
             {
                 return;
             }
 
-            foreach (var name in new[] { "poster.png", "folder.png", "backdrop.png", "banner.png", "logo.png" })
+            Directory.CreateDirectory(targetDir);
+            var assembly = typeof(YouTubeStartupService).Assembly;
+            var prefix = isMusic ? "music_" : "youtube_";
+
+            var imagePairs = new (string ResName, string FileName)[]
             {
-                var src = Path.Combine(asmDir, name);
-                var dst = Path.Combine(targetDir, name);
-                if (File.Exists(src) && !File.Exists(dst))
+                ($"{prefix}poster.png", "poster.png"),
+                ($"{prefix}poster.png", "folder.png"),
+                ($"{prefix}backdrop.png", "backdrop.png"),
+                ($"{prefix}backdrop.png", "fanart.png"),
+                ($"{prefix}banner.png", "banner.png"),
+                ($"{prefix}logo.png", "logo.png")
+            };
+
+            foreach (var (resName, fileName) in imagePairs)
+            {
+                var dst = Path.Combine(targetDir, fileName);
+                var fullRes = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith(resName, StringComparison.OrdinalIgnoreCase));
+                if (fullRes == null)
                 {
-                    File.Copy(src, dst, overwrite: true);
+                    continue;
+                }
+
+                using var stream = assembly.GetManifestResourceStream(fullRes);
+                if (stream != null)
+                {
+                    if (!File.Exists(dst) || new FileInfo(dst).Length != stream.Length)
+                    {
+                        using var fs = File.Create(dst);
+                        stream.CopyTo(fs);
+                    }
                 }
             }
         }
@@ -517,11 +537,11 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
             context.Result is Microsoft.AspNetCore.Mvc.ObjectResult { Value: MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbResp } &&
             pbResp.MediaSources is { Count: > 0 })
         {
-            var ytSource = pbResp.MediaSources
-                .OrderByDescending(m => m.MediaStreams?.Count ?? 0)
-                .FirstOrDefault(m => m.Path != null && m.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase));
+            var ytSources = pbResp.MediaSources
+                .Where(m => m.Path != null && m.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
-            if (ytSource != null)
+            if (ytSources.Count > 0)
             {
                 var req = context.HttpContext.Request;
                 var proto = req.Headers["X-Forwarded-Proto"].FirstOrDefault();
@@ -530,32 +550,36 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
                 var serverUrl = Plugin.Instance?.Configuration.GetPublicServerUrl(scheme, host)
                     ?? (!string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty);
 
-                if (!string.IsNullOrWhiteSpace(serverUrl))
+                foreach (var ytSource in ytSources)
                 {
-                    ytSource.Path = RewritePluginUrlHost(ytSource.Path, serverUrl);
-                    if (ytSource.MediaStreams != null)
+                    if (!string.IsNullOrWhiteSpace(serverUrl))
                     {
-                        foreach (var ms in ytSource.MediaStreams)
+                        ytSource.Path = RewritePluginUrlHost(ytSource.Path, serverUrl);
+                        if (ytSource.MediaStreams != null)
                         {
-                            if (!string.IsNullOrWhiteSpace(ms.Path) && ms.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                            foreach (var ms in ytSource.MediaStreams)
                             {
-                                ms.Path = RewritePluginUrlHost(ms.Path, serverUrl);
-                            }
+                                if (!string.IsNullOrWhiteSpace(ms.Path) && ms.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    ms.Path = RewritePluginUrlHost(ms.Path, serverUrl);
+                                }
 
-                            if (!string.IsNullOrWhiteSpace(ms.DeliveryUrl) && ms.DeliveryUrl.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
-                            {
-                                ms.DeliveryUrl = RewritePluginUrlHost(ms.DeliveryUrl, serverUrl);
+                                if (!string.IsNullOrWhiteSpace(ms.DeliveryUrl) && ms.DeliveryUrl.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    ms.DeliveryUrl = RewritePluginUrlHost(ms.DeliveryUrl, serverUrl);
+                                }
                             }
                         }
                     }
+
+                    ytSource.Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.Http;
+                    ytSource.IsRemote = true;
+                    ytSource.SupportsDirectPlay = true;
+                    ytSource.SupportsDirectStream = true;
+                    ytSource.SupportsTranscoding = true;
                 }
 
-                ytSource.Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.Http;
-                ytSource.IsRemote = true;
-                ytSource.SupportsDirectPlay = true;
-                ytSource.SupportsDirectStream = true;
-                ytSource.SupportsTranscoding = true;
-                pbResp.MediaSources = new List<MediaBrowser.Model.Dto.MediaSourceInfo> { ytSource };
+                pbResp.MediaSources = ytSources;
             }
         }
 
