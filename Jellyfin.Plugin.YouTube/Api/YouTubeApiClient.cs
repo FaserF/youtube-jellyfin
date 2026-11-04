@@ -187,18 +187,18 @@ public partial class YouTubeApiClient : IDisposable
         }
 
         var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        if (!string.IsNullOrWhiteSpace(account.AccessToken) && account.TokenExpiresAtUnix > nowUnix + 60)
+        if (account.TokenExpiresAtUnix > nowUnix + 60)
         {
-            return account.AccessToken;
+            return string.IsNullOrWhiteSpace(account.AccessToken) ? null : account.AccessToken;
         }
 
         await _authLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            if (!string.IsNullOrWhiteSpace(account.AccessToken) && account.TokenExpiresAtUnix > nowUnix + 60)
+            if (account.TokenExpiresAtUnix > nowUnix + 60)
             {
-                return account.AccessToken;
+                return string.IsNullOrWhiteSpace(account.AccessToken) ? null : account.AccessToken;
             }
 
             var clientId = !string.IsNullOrWhiteSpace(account.ClientId)
@@ -224,8 +224,16 @@ public partial class YouTubeApiClient : IDisposable
             using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
-                _logger.LogWarning("YouTube OAuth token refresh failed with HTTP {Status} for user {User}", resp.StatusCode, usernameOrId);
-                return account.AccessToken;
+                _logger.LogWarning("YouTube OAuth token refresh failed with HTTP {Status} for user {User}; backing off for 10m", resp.StatusCode, usernameOrId);
+                account.AccessToken = string.Empty;
+                account.TokenExpiresAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 600;
+                if (config.IsPrimaryUser(usernameOrId))
+                {
+                    config.PersistedAccessToken = string.Empty;
+                    config.PersistedTokenExpiresAtUnix = account.TokenExpiresAtUnix;
+                }
+
+                return null;
             }
 
             var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -258,13 +266,15 @@ public partial class YouTubeApiClient : IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error refreshing YouTube OAuth token for {User}", usernameOrId);
+            account.AccessToken = string.Empty;
+            account.TokenExpiresAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 120;
         }
         finally
         {
             _authLock.Release();
         }
 
-        return account.AccessToken;
+        return null;
     }
 
     private async Task<string?> FetchAccountNameAsync(string accessToken, CancellationToken cancellationToken)

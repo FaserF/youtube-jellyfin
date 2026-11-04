@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
@@ -10,6 +11,8 @@ namespace Jellyfin.Plugin.YouTube.Api;
 
 public partial class YouTubeApiClient
 {
+    private static readonly ConcurrentDictionary<string, Task<YouTubeStreamInfoDto?>> _inflightStreams = new(StringComparer.OrdinalIgnoreCase);
+
     public async Task<YouTubeStreamInfoDto?> ResolveStreamAsync(
         string videoId,
         CancellationToken cancellationToken = default)
@@ -25,6 +28,28 @@ public partial class YouTubeApiClient
             return cached.Info;
         }
 
+        var task = _inflightStreams.GetOrAdd(videoId, id => ResolveStreamCoreAsync(id));
+        try
+        {
+            return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (task.IsCompleted)
+            {
+                _inflightStreams.TryRemove(videoId, out _);
+            }
+        }
+    }
+
+    private async Task<YouTubeStreamInfoDto?> ResolveStreamCoreAsync(string videoId)
+    {
+        if (_streamCache.TryGetValue(videoId, out var cached) &&
+            (DateTime.UtcNow - cached.CachedAt).TotalMinutes < 45)
+        {
+            return cached.Info;
+        }
+
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         var ytDlpBin = !string.IsNullOrWhiteSpace(config.YtDlpPath) && File.Exists(config.YtDlpPath)
             ? config.YtDlpPath
@@ -32,172 +57,159 @@ public partial class YouTubeApiClient
 
         try
         {
-            var args = new List<string>
+            var stdout = await RunYtDlpJsonAsync(ytDlpBin, videoId, config, useProxy: true).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(stdout) && !string.IsNullOrWhiteSpace(config.ProxyUrl))
             {
-                "--no-warnings",
-                "--no-playlist",
-                "-J"
-            };
-
-            if (!string.IsNullOrWhiteSpace(config.ProxyUrl))
-            {
-                args.Add("--proxy");
-                args.Add(config.ProxyUrl);
+                _logger.LogInformation("Retrying yt-dlp without proxy for {VideoId}", videoId);
+                stdout = await RunYtDlpJsonAsync(ytDlpBin, videoId, config, useProxy: false).ConfigureAwait(false);
             }
 
-            if (!string.IsNullOrWhiteSpace(config.CookiesText))
+            if (!string.IsNullOrWhiteSpace(stdout))
             {
-                var cookieFile = "/tmp/yt_jellyfin_cookies.txt";
-                await File.WriteAllTextAsync(cookieFile, config.CookiesText, cancellationToken).ConfigureAwait(false);
-                args.Add("--cookies");
-                args.Add(cookieFile);
-            }
+                using var doc = JsonDocument.Parse(stdout);
+                var root = doc.RootElement;
 
-            args.Add($"https://www.youtube.com/watch?v={videoId}");
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = ytDlpBin,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            foreach (var a in args)
-            {
-                psi.ArgumentList.Add(a);
-            }
-
-            using var proc = Process.Start(psi);
-            if (proc != null)
-            {
-                var stdoutTask = proc.StandardOutput.ReadToEndAsync(cancellationToken);
-                var stderrTask = proc.StandardError.ReadToEndAsync(cancellationToken);
-                await proc.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-                var stdout = await stdoutTask.ConfigureAwait(false);
-
-                if (proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(stdout))
+                var info = new YouTubeStreamInfoDto
                 {
-                    using var doc = JsonDocument.Parse(stdout);
-                    var root = doc.RootElement;
+                    VideoId = videoId,
+                    Title = root.TryGetProperty("title", out var t) ? t.GetString() ?? videoId : videoId,
+                    ChannelTitle = root.TryGetProperty("uploader", out var u) ? u.GetString() ?? string.Empty : string.Empty,
+                    ChannelId = root.TryGetProperty("channel_id", out var cid) ? cid.GetString() ?? string.Empty : string.Empty,
+                    Description = root.TryGetProperty("description", out var desc) ? desc.GetString() ?? string.Empty : string.Empty,
+                    DurationSeconds = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number ? (long)dur.GetDouble() : 0
+                };
 
-                    var info = new YouTubeStreamInfoDto
+                var maxHeight = config.PreferredMaxResolution > 0 ? config.PreferredMaxResolution : 2160;
+                var prefLang = (config.PreferredLanguage ?? "de").Split('-')[0];
+                string? bestHlsManifest = null;
+                string? bestCombinedUrl = null;
+                string? bestVideoOnlyUrl = null;
+                string? bestAudioOnlyUrl = null;
+                int bestAudioScore = -1;
+                int bestHeight = 0;
+
+                if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
+                {
+                    var audioTrackMap = new Dictionary<string, YouTubeAudioTrackDto>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var f in formats.EnumerateArray())
                     {
-                        VideoId = videoId,
-                        Title = root.TryGetProperty("title", out var t) ? t.GetString() ?? videoId : videoId,
-                        ChannelTitle = root.TryGetProperty("uploader", out var u) ? u.GetString() ?? string.Empty : string.Empty,
-                        ChannelId = root.TryGetProperty("channel_id", out var cid) ? cid.GetString() ?? string.Empty : string.Empty,
-                        Description = root.TryGetProperty("description", out var desc) ? desc.GetString() ?? string.Empty : string.Empty,
-                        DurationSeconds = root.TryGetProperty("duration", out var dur) && dur.ValueKind == JsonValueKind.Number ? (long)dur.GetDouble() : 0
-                    };
+                        var formatId = f.TryGetProperty("format_id", out var fidProp) ? fidProp.GetString() ?? string.Empty : string.Empty;
+                        var url = f.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
+                        var manifest = f.TryGetProperty("manifest_url", out var mProp) ? mProp.GetString() : null;
+                        var vcodec = f.TryGetProperty("vcodec", out var vcProp) ? vcProp.GetString() ?? "none" : "none";
+                        var acodec = f.TryGetProperty("acodec", out var acProp) ? acProp.GetString() ?? "none" : "none";
+                        var height = f.TryGetProperty("height", out var hProp) && hProp.ValueKind == JsonValueKind.Number ? hProp.GetInt32() : 0;
+                        var ext = f.TryGetProperty("ext", out var extProp) ? extProp.GetString() ?? string.Empty : string.Empty;
+                        var lang = f.TryGetProperty("language", out var lProp) ? lProp.GetString() : null;
+                        var formatNote = f.TryGetProperty("format_note", out var fnProp) ? fnProp.GetString() ?? string.Empty : string.Empty;
+                        var tbr = f.TryGetProperty("tbr", out var tbrProp) && tbrProp.ValueKind == JsonValueKind.Number ? (int)(tbrProp.GetDouble() * 1000) : 128000;
+                        var abr = f.TryGetProperty("abr", out var abrProp) && abrProp.ValueKind == JsonValueKind.Number ? (int)(abrProp.GetDouble() * 1000) : tbr;
+                        var sampleRate = f.TryGetProperty("asr", out var asrProp) && asrProp.ValueKind == JsonValueKind.Number ? asrProp.GetInt32() : 44100;
+                        var channels = f.TryGetProperty("audio_channels", out var chProp) && chProp.ValueKind == JsonValueKind.Number ? chProp.GetInt32() : 2;
 
-                    var maxHeight = config.PreferredMaxResolution > 0 ? config.PreferredMaxResolution : 2160;
-                    string? bestHlsManifest = null;
-                    string? bestCombinedUrl = null;
-                    string? bestVideoOnlyUrl = null;
-                    string? bestAudioOnlyUrl = null;
-                    int bestHeight = 0;
-
-                    if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
-                    {
-                        var audioTrackMap = new Dictionary<string, YouTubeAudioTrackDto>(StringComparer.OrdinalIgnoreCase);
-
-                        foreach (var f in formats.EnumerateArray())
+                        if (!string.IsNullOrWhiteSpace(manifest) && manifest.Contains("hls_variant", StringComparison.OrdinalIgnoreCase))
                         {
-                            var formatId = f.TryGetProperty("format_id", out var fidProp) ? fidProp.GetString() ?? string.Empty : string.Empty;
-                            var url = f.TryGetProperty("url", out var uProp) ? uProp.GetString() : null;
-                            var manifest = f.TryGetProperty("manifest_url", out var mProp) ? mProp.GetString() : null;
-                            var vcodec = f.TryGetProperty("vcodec", out var vcProp) ? vcProp.GetString() ?? "none" : "none";
-                            var acodec = f.TryGetProperty("acodec", out var acProp) ? acProp.GetString() ?? "none" : "none";
-                            var height = f.TryGetProperty("height", out var hProp) && hProp.ValueKind == JsonValueKind.Number ? hProp.GetInt32() : 0;
-                            var ext = f.TryGetProperty("ext", out var extProp) ? extProp.GetString() ?? string.Empty : string.Empty;
-                            var lang = f.TryGetProperty("language", out var lProp) ? lProp.GetString() : null;
-                            var formatNote = f.TryGetProperty("format_note", out var fnProp) ? fnProp.GetString() ?? string.Empty : string.Empty;
-                            var tbr = f.TryGetProperty("tbr", out var tbrProp) && tbrProp.ValueKind == JsonValueKind.Number ? (int)(tbrProp.GetDouble() * 1000) : 128000;
-                            var abr = f.TryGetProperty("abr", out var abrProp) && abrProp.ValueKind == JsonValueKind.Number ? (int)(abrProp.GetDouble() * 1000) : tbr;
-                            var sampleRate = f.TryGetProperty("asr", out var asrProp) && asrProp.ValueKind == JsonValueKind.Number ? asrProp.GetInt32() : 44100;
-                            var channels = f.TryGetProperty("audio_channels", out var chProp) && chProp.ValueKind == JsonValueKind.Number ? chProp.GetInt32() : 2;
+                            bestHlsManifest = manifest;
+                        }
 
-                            if (!string.IsNullOrWhiteSpace(manifest) && manifest.Contains("hls_variant", StringComparison.OrdinalIgnoreCase))
+                        if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (vcodec != "none" && acodec != "none" && height <= maxHeight && height >= bestHeight)
                             {
-                                bestHlsManifest = manifest;
+                                bestCombinedUrl = url;
+                                bestHeight = height;
+                                info.Height = height;
+                                info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
                             }
-
-                            if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                            else if (vcodec != "none" && acodec == "none" && height <= maxHeight && height >= bestHeight && ext == "mp4")
                             {
-                                if (vcodec != "none" && acodec != "none" && height <= maxHeight && height >= bestHeight)
+                                bestVideoOnlyUrl = url;
+                                bestHeight = height;
+                                info.Height = height;
+                                info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
+                            }
+                            else if (vcodec == "none" && acodec != "none" && !IsM3u8Url(url))
+                            {
+                                var isAac = ext.Equals("m4a", StringComparison.OrdinalIgnoreCase) || acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase);
+                                var langKey = !string.IsNullOrWhiteSpace(lang) ? lang : "und";
+                                var isOriginal = formatNote.Contains("original", StringComparison.OrdinalIgnoreCase) || formatNote.Contains("default", StringComparison.OrdinalIgnoreCase);
+                                var isDub = formatNote.Contains("dubbed", StringComparison.OrdinalIgnoreCase) || formatNote.Contains("dub", StringComparison.OrdinalIgnoreCase);
+                                var isPrefLang = langKey.StartsWith(prefLang, StringComparison.OrdinalIgnoreCase);
+
+                                var audioScore = (isAac ? 1_000_000 : 0) +
+                                                 (isPrefLang ? 500_000 : (!isDub ? 300_000 : 0)) +
+                                                 (isOriginal ? 100_000 : 0) +
+                                                 Math.Min(abr, 500_000);
+                                if (audioScore > bestAudioScore)
                                 {
-                                    bestCombinedUrl = url;
-                                    bestHeight = height;
-                                    info.Height = height;
-                                    info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
+                                    bestAudioScore = audioScore;
+                                    bestAudioOnlyUrl = url;
                                 }
-                                else if (vcodec != "none" && acodec == "none" && height <= maxHeight && height >= bestHeight && ext == "mp4")
+
+                                var trackTitle = !string.IsNullOrWhiteSpace(formatNote)
+                                    ? $"{formatNote} ({langKey})"
+                                    : (langKey != "und" ? langKey : "Audio");
+
+                                var trackKey = $"{langKey}_{isDub}";
+                                var existingIsAac = audioTrackMap.TryGetValue(trackKey, out var existingTrack) && existingTrack.Codec == "aac";
+                                if (existingTrack == null || (isAac && !existingIsAac) || (isAac == existingIsAac && abr > existingTrack.Bitrate))
                                 {
-                                    bestVideoOnlyUrl = url;
-                                    bestHeight = height;
-                                    info.Height = height;
-                                    info.Width = f.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number ? wProp.GetInt32() : 1920;
-                                }
-                                else if (vcodec == "none" && acodec != "none")
-                                {
-                                    if (ext == "m4a" || acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
+                                    audioTrackMap[trackKey] = new YouTubeAudioTrackDto
                                     {
-                                        bestAudioOnlyUrl ??= url;
-                                    }
-
-                                    // Extract multi-audio track metadata (SmartTube multi-track parity)
-                                    var langKey = !string.IsNullOrWhiteSpace(lang) ? lang : "und";
-                                    var isOriginal = formatNote.Contains("original", StringComparison.OrdinalIgnoreCase);
-                                    var isDub = formatNote.Contains("dubbed", StringComparison.OrdinalIgnoreCase) ||
-                                                formatNote.Contains("dub", StringComparison.OrdinalIgnoreCase);
-
-                                    var trackTitle = !string.IsNullOrWhiteSpace(formatNote)
-                                        ? $"{formatNote} ({langKey})"
-                                        : (langKey != "und" ? langKey : "Audio");
-
-                                    // Pick highest bitrate track per language/dub variant
-                                    var trackKey = $"{langKey}_{isDub}_{formatNote}";
-                                    if (!audioTrackMap.TryGetValue(trackKey, out var existingTrack) || abr > existingTrack.Bitrate)
-                                    {
-                                        audioTrackMap[trackKey] = new YouTubeAudioTrackDto
-                                        {
-                                            FormatId = formatId,
-                                            Language = langKey,
-                                            Title = trackTitle,
-                                            Codec = acodec.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase) || ext == "m4a" ? "aac" : (acodec == "opus" ? "opus" : "aac"),
-                                            Bitrate = abr > 0 ? abr : 128000,
-                                            Channels = channels,
-                                            SampleRate = sampleRate,
-                                            IsOriginal = isOriginal,
-                                            IsDubbed = isDub,
-                                            IsDefault = isOriginal || (langKey == "und" && !isDub),
-                                            StreamUrl = url
-                                        };
-                                    }
+                                        FormatId = formatId,
+                                        Language = langKey,
+                                        Title = trackTitle,
+                                        Codec = isAac ? "aac" : (acodec.Contains("opus", StringComparison.OrdinalIgnoreCase) ? "opus" : "aac"),
+                                        Bitrate = abr > 0 ? abr : 128000,
+                                        Channels = channels,
+                                        SampleRate = sampleRate,
+                                        IsOriginal = isOriginal,
+                                        IsDubbed = isDub,
+                                        IsDefault = false,
+                                        StreamUrl = url
+                                    };
                                 }
                             }
                         }
-
-                        info.AudioTracks = audioTrackMap.Values.OrderByDescending(a => a.IsDefault).ThenBy(a => a.Language).ToList();
                     }
 
-                    info.HlsManifestUrl = bestHlsManifest ?? string.Empty;
-                    info.DirectStreamUrl = bestCombinedUrl ?? bestHlsManifest ?? bestVideoOnlyUrl ?? string.Empty;
-                    info.AudioStreamUrl = bestAudioOnlyUrl ?? string.Empty;
+                    var tracks = audioTrackMap.Values
+                        .OrderByDescending(a => a.Language.StartsWith(prefLang, StringComparison.OrdinalIgnoreCase))
+                        .ThenByDescending(a => a.IsOriginal || !a.IsDubbed)
+                        .ThenByDescending(a => a.Codec == "aac")
+                        .ThenByDescending(a => a.Bitrate)
+                        .ToList();
+                    if (tracks.Count > 0)
+                    {
+                        tracks[0].IsDefault = true;
+                    }
 
-                    // Parse official subtitles & automatic captions
-                    ParseSubtitlesAndCaptions(root, info);
+                    info.AudioTracks = tracks;
+                }
 
-                    var sbTask = GetSponsorBlockSegmentsAsync(videoId, cancellationToken);
-                    var rydTask = GetReturnYouTubeDislikeAsync(videoId, cancellationToken);
+                info.HlsManifestUrl = bestHlsManifest ?? string.Empty;
+                info.DirectStreamUrl = bestCombinedUrl ?? bestHlsManifest ?? bestVideoOnlyUrl ?? bestAudioOnlyUrl ?? string.Empty;
+                info.AudioStreamUrl = bestAudioOnlyUrl ?? string.Empty;
+
+                ParseSubtitlesAndCaptions(root, info);
+
+                try
+                {
+                    using var metaCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+                    var sbTask = GetSponsorBlockSegmentsAsync(videoId, metaCts.Token);
+                    var rydTask = GetReturnYouTubeDislikeAsync(videoId, metaCts.Token);
                     await Task.WhenAll(sbTask, rydTask).ConfigureAwait(false);
                     info.SponsorSegments = await sbTask.ConfigureAwait(false);
                     info.DislikeStats = await rydTask.ConfigureAwait(false);
-
-                    _streamCache[videoId] = (info, DateTime.UtcNow);
-                    return info;
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Timed out or failed fetching optional SponsorBlock/RYD metadata during stream resolve for {VideoId}", videoId);
+                }
+
+                _streamCache[videoId] = (info, DateTime.UtcNow);
+                return info;
             }
         }
         catch (Exception ex)
@@ -206,6 +218,87 @@ public partial class YouTubeApiClient
         }
 
         return null;
+    }
+
+    private static bool IsM3u8Url(string url) =>
+        url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+        url.Contains("hls_playlist", StringComparison.OrdinalIgnoreCase) ||
+        url.Contains("hls_variant", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<string?> RunYtDlpJsonAsync(
+        string ytDlpBin,
+        string videoId,
+        PluginConfiguration config,
+        bool useProxy)
+    {
+        var args = new List<string>
+        {
+            "--no-warnings",
+            "--no-playlist",
+            "--no-check-certificates",
+            "--geo-bypass",
+            "--geo-bypass-country",
+            !string.IsNullOrWhiteSpace(config.PreferredRegion) ? config.PreferredRegion : "DE",
+            "--socket-timeout",
+            "10",
+            "--no-write-auto-subs",
+            "--no-write-subs",
+            "--skip-download",
+            "-J"
+        };
+
+        var denoPath = File.Exists("/usr/local/bin/deno")
+            ? "/usr/local/bin/deno"
+            : (File.Exists("/config/bin/deno") ? "/config/bin/deno" : null);
+        if (denoPath != null)
+        {
+            args.Add("--js-runtimes");
+            args.Add($"deno:{denoPath}");
+        }
+
+        if (useProxy && !string.IsNullOrWhiteSpace(config.ProxyUrl))
+        {
+            args.Add("--proxy");
+            args.Add(config.ProxyUrl);
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.CookiesText))
+        {
+            var cookieFile = "/tmp/yt_jellyfin_cookies.txt";
+            await File.WriteAllTextAsync(cookieFile, config.CookiesText).ConfigureAwait(false);
+            args.Add("--cookies");
+            args.Add(cookieFile);
+        }
+
+        args.Add($"https://www.youtube.com/watch?v={videoId}");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ytDlpBin,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var proc = Process.Start(psi);
+        if (proc == null)
+        {
+            return null;
+        }
+
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+        await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        _ = await stderrTask.ConfigureAwait(false);
+
+        return proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(stdout) ? stdout : null;
     }
 
     private static void ParseSubtitlesAndCaptions(JsonElement root, YouTubeStreamInfoDto info)
@@ -449,124 +542,5 @@ public partial class YouTubeApiClient
             _logger.LogWarning(ex, "Failed to subscribe to channel {ChannelId} for {User}", channelId, usernameOrId);
             return false;
         }
-    }
-
-    public async Task<List<YouTubeCommentDto>> GetVideoCommentsAsync(
-        string videoId,
-        string? usernameOrId,
-        int maxResults = 25,
-        CancellationToken cancellationToken = default)
-    {
-        var list = new List<YouTubeCommentDto>();
-        var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false)
-                    ?? await EnsureUserAccessTokenAsync("fabian", cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return list;
-        }
-
-        try
-        {
-            var url = $"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={Uri.EscapeDataString(videoId)}&maxResults={Math.Min(50, maxResults)}&order=relevance&textFormat=plainText";
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            if (resp.IsSuccessStatusCode)
-            {
-                var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in items.EnumerateArray())
-                    {
-                        if (item.TryGetProperty("snippet", out var s) &&
-                            s.TryGetProperty("topLevelComment", out var tlc) &&
-                            tlc.TryGetProperty("snippet", out var cs))
-                        {
-                            var likes = cs.TryGetProperty("likeCount", out var lc) ? lc.GetInt32() : 0;
-                            list.Add(new YouTubeCommentDto
-                            {
-                                Author = cs.TryGetProperty("authorDisplayName", out var a) ? a.GetString() ?? "User" : "User",
-                                AuthorAvatarUrl = cs.TryGetProperty("authorProfileImageUrl", out var av) ? av.GetString() ?? string.Empty : string.Empty,
-                                Text = cs.TryGetProperty("textDisplay", out var td) ? td.GetString() ?? string.Empty : string.Empty,
-                                PublishedTimeText = cs.TryGetProperty("publishedAt", out var pa) ? pa.GetString() ?? string.Empty : string.Empty,
-                                LikeCountText = likes > 0 ? $"👍 {likes}" : string.Empty
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to fetch comments for {VideoId}", videoId);
-        }
-
-        return list;
-    }
-
-    public static string FormatRichOverview(YouTubeVideoItem video, ReturnYouTubeDislikeDto? ryd, List<SponsorBlockSegmentDto>? sb)
-    {
-        var sbText = new StringBuilder();
-        var statsParts = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(video.ChannelTitle))
-        {
-            statsParts.Add($"👤 {video.ChannelTitle}");
-        }
-
-        if (ryd != null && (ryd.Likes > 0 || ryd.Dislikes > 0))
-        {
-            var total = Math.Max(1, ryd.Likes + ryd.Dislikes);
-            var pct = (int)Math.Round((double)ryd.Likes / total * 100);
-            statsParts.Add($"👍 {FormatCount(ryd.Likes)}  👎 {FormatCount(ryd.Dislikes)} ({pct}%)");
-            if (ryd.ViewCount > 0)
-            {
-                statsParts.Add($"👁️ {FormatCount(ryd.ViewCount)} Views");
-            }
-        }
-        else if (video.ViewCount > 0)
-        {
-            statsParts.Add($"👁️ {FormatCount(video.ViewCount)} Views");
-        }
-
-        if (!string.IsNullOrWhiteSpace(video.PublishedTimeText))
-        {
-            statsParts.Add($"📅 {video.PublishedTimeText}");
-        }
-
-        if (sb != null && sb.Count > 0)
-        {
-            var cats = string.Join(", ", sb.Select(s => s.Category).Distinct());
-            statsParts.Add($"🛡️ SponsorBlock: {sb.Count} Segment(s) ({cats})");
-        }
-
-        if (statsParts.Count > 0)
-        {
-            sbText.AppendLine(string.Join("  •  ", statsParts));
-            sbText.AppendLine();
-        }
-
-        if (!string.IsNullOrWhiteSpace(video.Description))
-        {
-            sbText.Append(video.Description);
-        }
-
-        return sbText.ToString().Trim();
-    }
-
-    public static string FormatCount(long n)
-    {
-        if (n >= 1_000_000)
-        {
-            return $"{n / 1_000_000.0:0.#}M";
-        }
-
-        if (n >= 1_000)
-        {
-            return $"{n / 1_000.0:0.#}K";
-        }
-
-        return n.ToString();
     }
 }

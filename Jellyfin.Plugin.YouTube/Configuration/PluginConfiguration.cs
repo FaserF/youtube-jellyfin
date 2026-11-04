@@ -128,14 +128,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public string GetPublicServerUrl(string? requestScheme = null, string? requestHost = null)
     {
-        if (!string.IsNullOrWhiteSpace(PublicServerUrl))
-        {
-            return PublicServerUrl.TrimEnd('/');
-        }
-
         if (!string.IsNullOrWhiteSpace(requestScheme) && !string.IsNullOrWhiteSpace(requestHost))
         {
             return $"{requestScheme}://{requestHost}".TrimEnd('/');
+        }
+
+        if (!string.IsNullOrWhiteSpace(PublicServerUrl))
+        {
+            return PublicServerUrl.TrimEnd('/');
         }
 
         var published = Environment.GetEnvironmentVariable("JELLYFIN_PublishedServerUrl");
@@ -144,7 +144,7 @@ public class PluginConfiguration : BasePluginConfiguration
             return published.TrimEnd('/');
         }
 
-        return "https://jellyfin.tailnet.fabiseitz.de";
+        return "https://jellyfin.fabiseitz.de";
     }
 }
 

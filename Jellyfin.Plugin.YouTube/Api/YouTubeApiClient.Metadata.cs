@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
+using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Models;
 using Microsoft.Extensions.Logging;
 
@@ -183,5 +185,124 @@ public partial class YouTubeApiClient
         }
 
         return null;
+    }
+
+    public async Task<List<YouTubeCommentDto>> GetVideoCommentsAsync(
+        string videoId,
+        string? usernameOrId,
+        int maxResults = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var list = new List<YouTubeCommentDto>();
+        var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false)
+                    ?? await EnsureUserAccessTokenAsync("fabian", cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return list;
+        }
+
+        try
+        {
+            var url = $"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={Uri.EscapeDataString(videoId)}&maxResults={Math.Min(50, maxResults)}&order=relevance&textFormat=plainText";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in items.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("snippet", out var s) &&
+                            s.TryGetProperty("topLevelComment", out var tlc) &&
+                            tlc.TryGetProperty("snippet", out var cs))
+                        {
+                            var likes = cs.TryGetProperty("likeCount", out var lc) ? lc.GetInt32() : 0;
+                            list.Add(new YouTubeCommentDto
+                            {
+                                Author = cs.TryGetProperty("authorDisplayName", out var a) ? a.GetString() ?? "User" : "User",
+                                AuthorAvatarUrl = cs.TryGetProperty("authorProfileImageUrl", out var av) ? av.GetString() ?? string.Empty : string.Empty,
+                                Text = cs.TryGetProperty("textDisplay", out var td) ? td.GetString() ?? string.Empty : string.Empty,
+                                PublishedTimeText = cs.TryGetProperty("publishedAt", out var pa) ? pa.GetString() ?? string.Empty : string.Empty,
+                                LikeCountText = likes > 0 ? $"👍 {likes}" : string.Empty
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to fetch comments for {VideoId}", videoId);
+        }
+
+        return list;
+    }
+
+    public static string FormatRichOverview(YouTubeVideoItem video, ReturnYouTubeDislikeDto? ryd, List<SponsorBlockSegmentDto>? sb)
+    {
+        var sbText = new StringBuilder();
+        var statsParts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(video.ChannelTitle))
+        {
+            statsParts.Add($"👤 {video.ChannelTitle}");
+        }
+
+        if (ryd != null && (ryd.Likes > 0 || ryd.Dislikes > 0))
+        {
+            var total = Math.Max(1, ryd.Likes + ryd.Dislikes);
+            var pct = (int)Math.Round((double)ryd.Likes / total * 100);
+            statsParts.Add($"👍 {FormatCount(ryd.Likes)}  👎 {FormatCount(ryd.Dislikes)} ({pct}%)");
+            if (ryd.ViewCount > 0)
+            {
+                statsParts.Add($"👁️ {FormatCount(ryd.ViewCount)} Views");
+            }
+        }
+        else if (video.ViewCount > 0)
+        {
+            statsParts.Add($"👁️ {FormatCount(video.ViewCount)} Views");
+        }
+
+        if (!string.IsNullOrWhiteSpace(video.PublishedTimeText))
+        {
+            statsParts.Add($"📅 {video.PublishedTimeText}");
+        }
+
+        if (sb != null && sb.Count > 0)
+        {
+            var cats = string.Join(", ", sb.Select(s => s.Category).Distinct());
+            statsParts.Add($"🛡️ SponsorBlock: {sb.Count} Segment(s) ({cats})");
+        }
+
+        if (statsParts.Count > 0)
+        {
+            sbText.AppendLine(string.Join("  •  ", statsParts));
+            sbText.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(video.Description))
+        {
+            sbText.Append(video.Description);
+        }
+
+        return sbText.ToString().Trim();
+    }
+
+    public static string FormatCount(long n)
+    {
+        if (n >= 1_000_000)
+        {
+            return $"{n / 1_000_000.0:0.#}M";
+        }
+
+        if (n >= 1_000)
+        {
+            return $"{n / 1_000.0:0.#}K";
+        }
+
+        return n.ToString();
     }
 }

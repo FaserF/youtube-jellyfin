@@ -213,30 +213,9 @@ public class YouTubeStartupService : IHostedService
                     PathInfos = new[] { new MediaPathInfo { Path = config.StrmLibraryPath } },
                     TypeOptions = new[]
                     {
-                        new TypeOptions
-                        {
-                            Type = "Series",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        },
-                        new TypeOptions
-                        {
-                            Type = "Season",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        },
-                        new TypeOptions
-                        {
-                            Type = "Episode",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        }
+                        CreateYouTubeTypeOptions("Series"),
+                        CreateYouTubeTypeOptions("Season"),
+                        CreateYouTubeTypeOptions("Episode")
                     }
                 };
 #pragma warning restore CS0618
@@ -304,30 +283,9 @@ public class YouTubeStartupService : IHostedService
                     PathInfos = new[] { new MediaPathInfo { Path = config.YouTubeMusicLibraryPath } },
                     TypeOptions = new[]
                     {
-                        new TypeOptions
-                        {
-                            Type = "MusicArtist",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        },
-                        new TypeOptions
-                        {
-                            Type = "MusicAlbum",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        },
-                        new TypeOptions
-                        {
-                            Type = "Audio",
-                            MetadataFetchers = new[] { "YouTube" },
-                            MetadataFetcherOrder = new[] { "YouTube" },
-                            ImageFetchers = new[] { "YouTube" },
-                            ImageFetcherOrder = new[] { "YouTube" }
-                        }
+                        CreateYouTubeTypeOptions("MusicArtist"),
+                        CreateYouTubeTypeOptions("MusicAlbum"),
+                        CreateYouTubeTypeOptions("Audio")
                     }
                 };
 #pragma warning restore CS0618
@@ -344,6 +302,16 @@ public class YouTubeStartupService : IHostedService
             _logger.LogWarning(ex, "Failed to automatically create YouTube Music media library");
         }
     }
+
+    private static TypeOptions CreateYouTubeTypeOptions(string type) =>
+        new()
+        {
+            Type = type,
+            MetadataFetchers = new[] { "YouTube" },
+            MetadataFetcherOrder = new[] { "YouTube" },
+            ImageFetchers = new[] { "YouTube" },
+            ImageFetcherOrder = new[] { "YouTube" }
+        };
 
     private static void EnsureLibraryArtwork(string targetDir)
     {
@@ -501,7 +469,11 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
         var isAudioPath = path.StartsWith("/Audio/", StringComparison.OrdinalIgnoreCase);
 
         if ((isVideoPath || isAudioPath) &&
-            (path.Contains("/stream", StringComparison.OrdinalIgnoreCase) || path.Contains("/master.m3u8", StringComparison.OrdinalIgnoreCase)))
+            (path.Contains("/stream", StringComparison.OrdinalIgnoreCase) ||
+             path.Contains("/universal", StringComparison.OrdinalIgnoreCase) ||
+             path.Contains("/master.m3u8", StringComparison.OrdinalIgnoreCase) ||
+             path.Contains("/main.m3u8", StringComparison.OrdinalIgnoreCase) ||
+             path.Contains("/hls", StringComparison.OrdinalIgnoreCase)))
         {
             var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length >= 2 && Guid.TryParse(segments[1], out var itemId))
@@ -520,7 +492,8 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
                             ?? (!string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty);
 
                         var isAudio = isAudioPath || item is MediaBrowser.Controller.Entities.Audio.Audio ||
-                                      (item.Path != null && item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase));
+                                      (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
+                                                             item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
                         var target = isAudio
                             ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
                             : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
@@ -550,6 +523,33 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
 
             if (ytSource != null)
             {
+                var req = context.HttpContext.Request;
+                var proto = req.Headers["X-Forwarded-Proto"].FirstOrDefault();
+                var host = req.Headers["X-Forwarded-Host"].FirstOrDefault() ?? req.Host.Value;
+                var scheme = !string.IsNullOrWhiteSpace(proto) ? proto : req.Scheme;
+                var serverUrl = Plugin.Instance?.Configuration.GetPublicServerUrl(scheme, host)
+                    ?? (!string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty);
+
+                if (!string.IsNullOrWhiteSpace(serverUrl))
+                {
+                    ytSource.Path = RewritePluginUrlHost(ytSource.Path, serverUrl);
+                    if (ytSource.MediaStreams != null)
+                    {
+                        foreach (var ms in ytSource.MediaStreams)
+                        {
+                            if (!string.IsNullOrWhiteSpace(ms.Path) && ms.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                            {
+                                ms.Path = RewritePluginUrlHost(ms.Path, serverUrl);
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(ms.DeliveryUrl) && ms.DeliveryUrl.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                            {
+                                ms.DeliveryUrl = RewritePluginUrlHost(ms.DeliveryUrl, serverUrl);
+                            }
+                        }
+                    }
+                }
+
                 ytSource.Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.Http;
                 ytSource.IsRemote = true;
                 ytSource.SupportsDirectPlay = true;
@@ -560,5 +560,11 @@ public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActi
         }
 
         await next().ConfigureAwait(false);
+    }
+
+    private static string RewritePluginUrlHost(string url, string serverUrl)
+    {
+        var idx = url.IndexOf("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? $"{serverUrl.TrimEnd('/')}{url[idx..]}" : url;
     }
 }

@@ -261,8 +261,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
             var strmPath = Path.Combine(albumDir, $"{trackNum:D4} - {safeTitle} [YouTubeAudio-{t.VideoId}].strm");
             activePaths.Add(strmPath);
 
-            var serverUrl = config.GetPublicServerUrl();
-            var expectedUrl = $"{serverUrl}/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
+            const string internalServerUrl = "http://127.0.0.1:8096";
+            var expectedUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
             if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
@@ -329,8 +329,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 // Ignore cleanup errors
             }
 
-            var serverUrl = config.GetPublicServerUrl();
-            var expectedUrl = $"{serverUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
+            const string internalServerUrl = "http://127.0.0.1:8096";
+            var expectedUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
             if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);

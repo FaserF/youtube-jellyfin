@@ -342,18 +342,19 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
 
         var config = Config;
         var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
-        var serverUrl = config.GetPublicServerUrl();
+        const string internalServerUrl = "http://127.0.0.1:8096";
 
         var source = new MediaSourceInfo
         {
             Id = videoId,
             Name = $"{streamInfo.Title} (YouTube Music HQ Audio)",
-            Path = $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
+            Path = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
             Protocol = MediaProtocol.Http,
             Container = "m4a",
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
+            DefaultAudioStreamIndex = 0,
             RunTimeTicks = streamInfo.DurationSeconds > 0 ? TimeSpan.FromSeconds(streamInfo.DurationSeconds).Ticks : null,
             MediaStreams = new List<MediaStream>
             {
