@@ -21,8 +21,6 @@ public class YouTubePluginFullParityTests
 
         config.EnableStreamingChannel.Should().BeTrue();
         config.EnablePublicFallbackForUnlinkedUsers.Should().BeTrue();
-        config.PrimaryJellyfinUser.Should().Be("fabian");
-        config.PrimaryJellyfinUserId.Should().Be("c24de2a9fe3644569746e53b80490646");
         config.PreferredLanguage.Should().Be("de-DE");
         config.PreferredRegion.Should().Be("DE");
         config.PreferredMaxResolution.Should().Be(2160);
@@ -40,23 +38,25 @@ public class YouTubePluginFullParityTests
     }
 
     [Fact]
-    public void PluginConfiguration_ShouldLinkFabianPrimaryAndIsolateUnlinkedUsers()
+    public void PluginConfiguration_ShouldLinkPrimaryAndIsolateUnlinkedUsers()
     {
         var config = new PluginConfiguration
         {
-            PersistedRefreshToken = "fabian_refresh_123"
+            PrimaryJellyfinUser = "testuser",
+            PrimaryJellyfinUserId = "11112222333344445555666677778888",
+            PersistedRefreshToken = "test_refresh_123"
         };
 
-        config.IsPrimaryUser("fabian").Should().BeTrue();
-        config.IsPrimaryUser("c24de2a9-fe36-4456-9746-e53b80490646").Should().BeTrue();
-        config.IsPrimaryUser("Lorenz").Should().BeFalse();
+        config.IsPrimaryUser("testuser").Should().BeTrue();
+        config.IsPrimaryUser("11112222-3333-4444-5555-666677778888").Should().BeTrue();
+        config.IsPrimaryUser("OtherUser").Should().BeFalse();
 
-        var fabAcc = config.GetAccountForUser("fabian");
-        fabAcc.Should().NotBeNull();
-        fabAcc!.RefreshToken.Should().Be("fabian_refresh_123");
+        var primaryAcc = config.GetAccountForUser("testuser");
+        primaryAcc.Should().NotBeNull();
+        primaryAcc!.RefreshToken.Should().Be("test_refresh_123");
 
-        var lorenzAcc = config.GetAccountForUser("Lorenz");
-        lorenzAcc.Should().BeNull();
+        var otherAcc = config.GetAccountForUser("OtherUser");
+        otherAcc.Should().BeNull();
     }
 
     [Fact]
@@ -65,22 +65,22 @@ public class YouTubePluginFullParityTests
         var config = new PluginConfiguration();
         config.UserAccounts.Add(new YouTubeUserAccountEntry
         {
-            JellyfinUser = "fabian",
-            JellyfinUserId = "c24de2a9fe3644569746e53b80490646",
-            AccountName = "Fabian YT",
-            RefreshToken = "rt_fabian"
+            JellyfinUser = "Alice",
+            JellyfinUserId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            AccountName = "Alice YT",
+            RefreshToken = "rt_alice"
         });
         config.UserAccounts.Add(new YouTubeUserAccountEntry
         {
-            JellyfinUser = "Lorenz",
-            JellyfinUserId = "afabc6e1c2c849e4a0b210e209060773",
-            AccountName = "Lorenz YT",
-            RefreshToken = "rt_lorenz"
+            JellyfinUser = "Bob",
+            JellyfinUserId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            AccountName = "Bob YT",
+            RefreshToken = "rt_bob"
         });
 
-        config.GetAccountForUser("fabian")!.RefreshToken.Should().Be("rt_fabian");
-        config.GetAccountForUser("afabc6e1-c2c8-49e4-a0b2-10e209060773")!.RefreshToken.Should().Be("rt_lorenz");
-        config.GetAccountForUser("Werner").Should().BeNull();
+        config.GetAccountForUser("Alice")!.RefreshToken.Should().Be("rt_alice");
+        config.GetAccountForUser("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!.RefreshToken.Should().Be("rt_bob");
+        config.GetAccountForUser("Charlie").Should().BeNull();
     }
 
     [Fact]

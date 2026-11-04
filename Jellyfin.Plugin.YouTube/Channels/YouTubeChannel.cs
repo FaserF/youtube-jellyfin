@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.YouTube.Channels;
 
 /// <summary>
 /// SmartTube 1:1 Parity Native Jellyfin Channel.
-/// Supports per-Jellyfin-user linked YouTube accounts (with automatic link for 'fabian')
+/// Supports per-Jellyfin-user linked YouTube accounts with optional public fallback for unlinked users.
 /// and public/anonymous mode for unlinked users.
 /// </summary>
 public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
@@ -45,27 +45,14 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
     private YouTubeApiClient CreateClient() =>
         new(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
 
-    public InternalChannelFeatures GetChannelFeatures()
+    public InternalChannelFeatures GetChannelFeatures() => new()
     {
-        return new InternalChannelFeatures
-        {
-            ContentTypes = new List<ChannelMediaContentType>
-            {
-                ChannelMediaContentType.Episode,
-                ChannelMediaContentType.Movie,
-                ChannelMediaContentType.Clip,
-                ChannelMediaContentType.Song
-            },
-            MediaTypes = new List<ChannelMediaType>
-            {
-                ChannelMediaType.Video,
-                ChannelMediaType.Audio
-            },
-            SupportsContentDownloading = true,
-            SupportsSortOrderToggle = true,
-            MaxPageSize = 50
-        };
-    }
+        ContentTypes = new List<ChannelMediaContentType> { ChannelMediaContentType.Episode, ChannelMediaContentType.Movie, ChannelMediaContentType.Clip, ChannelMediaContentType.Song },
+        MediaTypes = new List<ChannelMediaType> { ChannelMediaType.Video, ChannelMediaType.Audio },
+        SupportsContentDownloading = true,
+        SupportsSortOrderToggle = true,
+        MaxPageSize = 50
+    };
 
     public bool IsEnabledFor(string userId)
     {
@@ -355,6 +342,11 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         var idx = 1;
         foreach (var v in videos)
         {
+            if (v.PublishedAt == null && !string.IsNullOrWhiteSpace(v.PublishedTimeText))
+            {
+                v.PublishedAt = YouTubeApiClient.ParseRelativeDate(v.PublishedTimeText);
+            }
+
             float? rating = null;
             if (v.DislikeStats != null && (v.DislikeStats.Likes + v.DislikeStats.Dislikes) > 0)
             {
@@ -558,15 +550,18 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             }
         }
 
-        var proxyPlayUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+        var directPlayUrl = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl)
+            ? streamInfo.HlsManifestUrl
+            : (!string.IsNullOrWhiteSpace(streamInfo.DirectStreamUrl) ? streamInfo.DirectStreamUrl : $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8");
 
         var source = new MediaSourceInfo
         {
             Id = videoId,
-            Name = $"{streamInfo.Title} ({streamInfo.Height}p Ad-Free)",
-            Path = proxyPlayUrl,
+            Name = $"{streamInfo.Title} ({streamInfo.Height}p Direct)",
+            Path = directPlayUrl,
             Protocol = MediaProtocol.Http,
             Container = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl) ? "hls" : "mp4",
+            IsRemote = true,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
@@ -580,7 +575,11 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
 
     public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new DynamicImageResponse { HasImage = false });
+        var res = type switch { ImageType.Backdrop => "youtube_backdrop.png", ImageType.Thumb => "youtube_banner.png", ImageType.Logo => "youtube_logo.png", _ => "youtube_poster.png" };
+        var asm = typeof(YouTubeChannel).Assembly;
+        var fullRes = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(res, StringComparison.OrdinalIgnoreCase));
+        var stream = fullRes != null ? asm.GetManifestResourceStream(fullRes) : null;
+        return Task.FromResult(stream != null ? new DynamicImageResponse { HasImage = true, Stream = stream, Format = MediaBrowser.Model.Drawing.ImageFormat.Png } : new DynamicImageResponse { HasImage = false });
     }
 
     public IEnumerable<ImageType> GetSupportedChannelImages() => new[] { ImageType.Primary, ImageType.Thumb, ImageType.Backdrop };

@@ -49,7 +49,7 @@ public class YouTubeStartupService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        TryBootstrapFabianAccount();
+        TryBootstrapSeedAccount();
         TryInjectIndexHtmlScript();
         await EnsureYouTubeLibraryAsync().ConfigureAwait(false);
         await EnsureYouTubeMusicLibraryAsync().ConfigureAwait(false);
@@ -65,7 +65,7 @@ public class YouTubeStartupService : IHostedService
         return Task.CompletedTask;
     }
 
-    private void TryBootstrapFabianAccount()
+    private void TryBootstrapSeedAccount()
     {
         try
         {
@@ -75,15 +75,28 @@ public class YouTubeStartupService : IHostedService
                 return;
             }
 
-            const string seedFile = "/config/data/plugins/YouTube/fabian_oauth_seed.json";
-            if (File.Exists(seedFile))
+            var seedFile = File.Exists("/config/data/plugins/YouTube/oauth_seed.json")
+                ? "/config/data/plugins/YouTube/oauth_seed.json"
+                : (File.Exists("/config/data/plugins/YouTube/fabian_oauth_seed.json") ? "/config/data/plugins/YouTube/fabian_oauth_seed.json" : null);
+
+            if (seedFile != null)
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(seedFile));
                 var root = doc.RootElement;
                 var clientId = root.TryGetProperty("clientId", out var cid) ? cid.GetString() ?? string.Empty : string.Empty;
                 var clientSecret = root.TryGetProperty("clientSecret", out var cs) ? cs.GetString() ?? string.Empty : string.Empty;
                 var refreshToken = root.TryGetProperty("refreshToken", out var rt) ? rt.GetString() ?? string.Empty : string.Empty;
-                var accountName = root.TryGetProperty("accountName", out var an) ? an.GetString() ?? "Fabian (YouTube)" : "Fabian (YouTube)";
+                var accountName = root.TryGetProperty("accountName", out var an) ? an.GetString() ?? "Primary Account" : "Primary Account";
+                var targetUser = root.TryGetProperty("jellyfinUser", out var ju) ? ju.GetString() : null;
+                if (string.IsNullOrWhiteSpace(targetUser))
+                {
+                    targetUser = config.PrimaryJellyfinUser;
+                }
+
+                if (!string.IsNullOrWhiteSpace(targetUser))
+                {
+                    config.PrimaryJellyfinUser = targetUser;
+                }
 
                 if (!string.IsNullOrWhiteSpace(refreshToken))
                 {
@@ -103,37 +116,37 @@ public class YouTubeStartupService : IHostedService
                     }
 
                     config.UserAccounts ??= new List<YouTubeUserAccountEntry>();
-                    var fabEntry = config.UserAccounts.FirstOrDefault(u =>
-                        string.Equals(u.JellyfinUser, "fabian", StringComparison.OrdinalIgnoreCase));
-                    if (fabEntry == null)
+                    var userEntry = config.UserAccounts.FirstOrDefault(u =>
+                        string.Equals(u.JellyfinUser, targetUser, StringComparison.OrdinalIgnoreCase));
+                    if (userEntry == null)
                     {
-                        fabEntry = new YouTubeUserAccountEntry
+                        userEntry = new YouTubeUserAccountEntry
                         {
-                            JellyfinUser = "fabian",
-                            JellyfinUserId = "c24de2a9fe3644569746e53b80490646",
+                            JellyfinUser = targetUser,
+                            JellyfinUserId = config.PrimaryJellyfinUserId ?? string.Empty,
                             AccountName = accountName,
                             ClientId = clientId,
                             ClientSecret = clientSecret,
                             RefreshToken = refreshToken
                         };
-                        config.UserAccounts.Add(fabEntry);
+                        config.UserAccounts.Add(userEntry);
                     }
-                    else if (string.IsNullOrWhiteSpace(fabEntry.RefreshToken))
+                    else if (string.IsNullOrWhiteSpace(userEntry.RefreshToken))
                     {
-                        fabEntry.ClientId = clientId;
-                        fabEntry.ClientSecret = clientSecret;
-                        fabEntry.RefreshToken = refreshToken;
-                        fabEntry.AccountName = accountName;
+                        userEntry.ClientId = clientId;
+                        userEntry.ClientSecret = clientSecret;
+                        userEntry.RefreshToken = refreshToken;
+                        userEntry.AccountName = accountName;
                     }
 
                     Plugin.Instance?.SaveConfiguration();
-                    _logger.LogInformation("Linked YouTube OAuth account '{Account}' to Jellyfin user 'fabian'", accountName);
+                    _logger.LogInformation("Linked YouTube OAuth account '{Account}' to Jellyfin user '{User}'", accountName, targetUser);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not bootstrap Fabian YouTube OAuth seed");
+            _logger.LogWarning(ex, "Could not bootstrap primary YouTube OAuth seed");
         }
     }
 
@@ -202,17 +215,8 @@ public class YouTubeStartupService : IHostedService
                     EnableInternetProviders = true,
                     EnableRealtimeMonitor = true,
                     SaveLocalMetadata = false,
-                    EnablePhotos = false,
-                    EnableTrickplayImageExtraction = false,
-                    ExtractChapterImagesDuringLibraryScan = false,
-                    EnableAutomaticSeriesGrouping = false,
                     PathInfos = new[] { new MediaPathInfo { Path = config.StrmLibraryPath } },
-                    TypeOptions = new[]
-                    {
-                        CreateYouTubeTypeOptions("Series"),
-                        CreateYouTubeTypeOptions("Season"),
-                        CreateYouTubeTypeOptions("Episode")
-                    }
+                    TypeOptions = new[] { CreateYouTubeTypeOptions("Series"), CreateYouTubeTypeOptions("Season"), CreateYouTubeTypeOptions("Episode") }
                 };
 #pragma warning restore CS0618
 
@@ -273,16 +277,8 @@ public class YouTubeStartupService : IHostedService
                     EnableInternetProviders = true,
                     EnableRealtimeMonitor = true,
                     SaveLocalMetadata = false,
-                    EnablePhotos = false,
-                    EnableTrickplayImageExtraction = false,
-                    ExtractChapterImagesDuringLibraryScan = false,
                     PathInfos = new[] { new MediaPathInfo { Path = config.YouTubeMusicLibraryPath } },
-                    TypeOptions = new[]
-                    {
-                        CreateYouTubeTypeOptions("MusicArtist"),
-                        CreateYouTubeTypeOptions("MusicAlbum"),
-                        CreateYouTubeTypeOptions("Audio")
-                    }
+                    TypeOptions = new[] { CreateYouTubeTypeOptions("MusicArtist"), CreateYouTubeTypeOptions("MusicAlbum"), CreateYouTubeTypeOptions("Audio") }
                 };
 #pragma warning restore CS0618
 
@@ -450,7 +446,7 @@ public class YouTubeStartupService : IHostedService
                 return;
             }
 
-            var userKey = e.UserId.Equals(Guid.Empty) ? "fabian" : e.UserId.ToString("N");
+            var userKey = e.UserId.Equals(Guid.Empty) ? (config.PrimaryJellyfinUser ?? string.Empty) : e.UserId.ToString("N");
             var rating = e.UserData.IsFavorite ? "like" : "none";
 
             using var client = new YouTubeApiClient(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
@@ -465,11 +461,7 @@ public class YouTubeStartupService : IHostedService
 }
 
 /// <summary>
-/// Intercepts Jellyfin's PlaybackInfo responses and /Videos/{itemId}/stream* requests for YouTube items.
-/// 1. Ensures PlaybackInfo returns a single unified MediaSourceInfo with all audio dubs and subtitle tracks,
-///    SupportsDirectPlay = true, SupportsDirectStream = true, SupportsTranscoding = false/true.
-/// 2. Redirects any legacy /Videos/{itemId}/stream* request for a YouTube item to /api/youtubePlugin/stream/{videoId}/master.m3u8
-///    or audio.m4a so players play directly.
+/// Intercepts Jellyfin's PlaybackInfo and legacy stream requests, redirecting to direct YouTube CDN streams.
 /// </summary>
 public class YouTubePlaybackFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter, Microsoft.AspNetCore.Mvc.Filters.IAsyncResultFilter
 {

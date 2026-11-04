@@ -19,7 +19,10 @@ public partial class YouTubeApiClient
             return cachedVideo;
         }
 
-        var token = await EnsureUserAccessTokenAsync("fabian", cancellationToken).ConfigureAwait(false);
+        var primaryUser = Plugin.Instance?.Configuration.PrimaryJellyfinUser;
+        var token = !string.IsNullOrWhiteSpace(primaryUser)
+            ? await EnsureUserAccessTokenAsync(primaryUser, cancellationToken).ConfigureAwait(false)
+            : null;
         if (!string.IsNullOrWhiteSpace(token))
         {
             try
@@ -82,6 +85,35 @@ public partial class YouTubeApiClient
 
         try
         {
+            var stream = await ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
+            if (stream != null)
+            {
+                var item = new YouTubeVideoItem
+                {
+                    VideoId = videoId,
+                    Title = stream.Title,
+                    Description = stream.Description,
+                    ChannelId = stream.ChannelId,
+                    ChannelTitle = stream.ChannelTitle,
+                    ThumbnailUrl = $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg",
+                    PublishedAt = stream.PublishedAt,
+                    PublishedTimeText = stream.PublishedAt?.ToString("yyyy-MM-dd") ?? string.Empty,
+                    DurationSeconds = stream.DurationSeconds,
+                    ViewCount = stream.DislikeStats?.ViewCount ?? 0,
+                    DislikeStats = stream.DislikeStats,
+                    SponsorSegments = stream.SponsorSegments
+                };
+                _cache[cacheKey] = (item, DateTime.UtcNow);
+                return item;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Direct stream metadata lookup failed for {VideoId}", videoId);
+        }
+
+        try
+        {
             var oembedUrl = $"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={Uri.EscapeDataString(videoId)}&format=json";
             var json = await _httpClient.GetStringAsync(oembedUrl, cancellationToken).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
@@ -113,7 +145,10 @@ public partial class YouTubeApiClient
             return cachedChan;
         }
 
-        var token = await EnsureUserAccessTokenAsync("fabian", cancellationToken).ConfigureAwait(false);
+        var primaryUser = Plugin.Instance?.Configuration.PrimaryJellyfinUser;
+        var token = !string.IsNullOrWhiteSpace(primaryUser)
+            ? await EnsureUserAccessTokenAsync(primaryUser, cancellationToken).ConfigureAwait(false)
+            : null;
         if (!string.IsNullOrWhiteSpace(token))
         {
             try
@@ -194,8 +229,9 @@ public partial class YouTubeApiClient
         CancellationToken cancellationToken = default)
     {
         var list = new List<YouTubeCommentDto>();
+        var primaryUser = Plugin.Instance?.Configuration.PrimaryJellyfinUser;
         var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false)
-                    ?? await EnsureUserAccessTokenAsync("fabian", cancellationToken).ConfigureAwait(false);
+                    ?? (!string.IsNullOrWhiteSpace(primaryUser) ? await EnsureUserAccessTokenAsync(primaryUser, cancellationToken).ConfigureAwait(false) : null);
         if (string.IsNullOrWhiteSpace(token))
         {
             return list;
@@ -266,9 +302,12 @@ public partial class YouTubeApiClient
             statsParts.Add($"👁️ {FormatCount(video.ViewCount)} Views");
         }
 
-        if (!string.IsNullOrWhiteSpace(video.PublishedTimeText))
+        var pubText = !string.IsNullOrWhiteSpace(video.PublishedTimeText)
+            ? video.PublishedTimeText
+            : video.PublishedAt?.ToString("yyyy-MM-dd");
+        if (!string.IsNullOrWhiteSpace(pubText))
         {
-            statsParts.Add($"📅 {video.PublishedTimeText}");
+            statsParts.Add($"📅 {pubText}");
         }
 
         if (sb != null && sb.Count > 0)

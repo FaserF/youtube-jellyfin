@@ -46,7 +46,7 @@
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkEnablePublicFallback" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users (If unchecked, YouTube is strictly exclusive to Fabian &amp; linked users)</span>
+                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users (If unchecked, YouTube is strictly exclusive to linked users)</span>
                             </label>
                         </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
@@ -99,7 +99,7 @@
 
                     <div class="verticalSection">
                         <h2 class="sectionTitle">🎵 YouTube Music Integration (Optional — Enabled by Default)</h2>
-                        <p>Integrates YouTube Music as both a native Jellyfin Music Channel and a dedicated Jellyfin Music Library with audio-only HQ streaming (AAC/M4A), mapped automatically to Fabian's account and optionally available to other users via Public Mode or self-service TV Code login.</p>
+                        <p>Integrates YouTube Music as both a native Jellyfin Music Channel and a dedicated Jellyfin Music Library with audio-only HQ streaming (AAC/M4A), mapped automatically to the primary account and optionally available to other users via Public Mode or self-service TV Code login.</p>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkEnableYtm" type="checkbox" is="emby-checkbox" />
@@ -219,7 +219,7 @@
                         document.getElementById("txtYtmLibraryPath").value = config.YouTubeMusicLibraryPath || "/data/youtube-music";
                         document.getElementById("selectYtmBitrate").value = String(config.YouTubeMusicPreferredBitrate || 256);
                         document.getElementById("txtYtmMaxItems").value = String(config.YouTubeMusicMaxItemsPerFeed || 25);
-                        document.getElementById("txtPrimaryUser").value = config.PrimaryJellyfinUser || "fabian";
+                        document.getElementById("txtPrimaryUser").value = config.PrimaryJellyfinUser || "";
                         document.getElementById("txtPreferredLang").value = config.PreferredLanguage || "de-DE";
                         document.getElementById("txtPreferredRegion").value = config.PreferredRegion || "DE";
                         Dashboard.hideLoadingMsg();
@@ -229,7 +229,7 @@
                 document.getElementById("btnGenerateTvCode").addEventListener("click", async function () {
                     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
                     var sel = document.getElementById("selectJellyfinUser");
-                    var jfUser = sel.value || "fabian";
+                    var jfUser = sel.value || "";
                     var jfUid = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute("data-uid") : "";
 
                     var res = await fetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
@@ -277,7 +277,7 @@
                         config.YouTubeMusicLibraryPath = document.getElementById("txtYtmLibraryPath").value.trim() || "/data/youtube-music";
                         config.YouTubeMusicPreferredBitrate = parseInt(document.getElementById("selectYtmBitrate").value, 10) || 256;
                         config.YouTubeMusicMaxItemsPerFeed = parseInt(document.getElementById("txtYtmMaxItems").value, 10) || 25;
-                        config.PrimaryJellyfinUser = document.getElementById("txtPrimaryUser").value.trim() || "fabian";
+                        config.PrimaryJellyfinUser = document.getElementById("txtPrimaryUser").value.trim();
                         config.PreferredLanguage = document.getElementById("txtPreferredLang").value.trim() || "de-DE";
                         config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "DE";
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {

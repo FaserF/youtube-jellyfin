@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.YouTube.Channels;
 
 /// <summary>
 /// Native YouTube Music Jellyfin Channel.
-/// Supports per-Jellyfin-user linked YouTube accounts (with automatic link for 'fabian')
+/// Supports per-Jellyfin-user linked YouTube Music accounts with optional public fallback for unlinked users.
 /// and optional public/anonymous mode for unlinked users.
 /// </summary>
 public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
@@ -344,13 +344,18 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
         const string internalServerUrl = "http://127.0.0.1:8096";
 
+        var directAudioUrl = !string.IsNullOrWhiteSpace(streamInfo.AudioStreamUrl)
+            ? streamInfo.AudioStreamUrl
+            : $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a";
+
         var source = new MediaSourceInfo
         {
             Id = videoId,
             Name = $"{streamInfo.Title} (YouTube Music HQ Audio)",
-            Path = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
+            Path = directAudioUrl,
             Protocol = MediaProtocol.Http,
             Container = "m4a",
+            IsRemote = true,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
@@ -376,8 +381,14 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         return new[] { source };
     }
 
-    public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken) =>
-        Task.FromResult(new DynamicImageResponse { HasImage = false });
+    public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
+    {
+        var res = type switch { ImageType.Backdrop => "music_backdrop.png", ImageType.Thumb => "music_banner.png", ImageType.Logo => "music_logo.png", _ => "music_poster.png" };
+        var asm = typeof(YouTubeMusicChannel).Assembly;
+        var fullRes = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(res, StringComparison.OrdinalIgnoreCase));
+        var stream = fullRes != null ? asm.GetManifestResourceStream(fullRes) : null;
+        return Task.FromResult(stream != null ? new DynamicImageResponse { HasImage = true, Stream = stream, Format = MediaBrowser.Model.Drawing.ImageFormat.Png } : new DynamicImageResponse { HasImage = false });
+    }
 
-    public IEnumerable<ImageType> GetSupportedChannelImages() => new[] { ImageType.Primary, ImageType.Thumb, ImageType.Backdrop };
+    public IEnumerable<ImageType> GetSupportedChannelImages() => new[] { ImageType.Primary, ImageType.Thumb, ImageType.Backdrop, ImageType.Logo };
 }

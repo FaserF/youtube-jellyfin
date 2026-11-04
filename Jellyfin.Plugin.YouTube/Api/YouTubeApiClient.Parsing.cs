@@ -214,16 +214,32 @@ public partial class YouTubeApiClient
             }
         }
 
+        var pubText = string.Empty;
+        if (viewsText.Contains('•'))
+        {
+            var split = viewsText.Split('•');
+            if (split.Length > 1)
+            {
+                pubText = split[1].Trim();
+            }
+        }
+
+        var pubDate = ParseRelativeDate(pubText);
+        var viewCount = ParseCountFromText(viewsText);
+
         return new YouTubeVideoItem
         {
             VideoId = vid,
             Title = title,
             ChannelTitle = channelTitle,
             ChannelId = chanId,
-            Description = !string.IsNullOrWhiteSpace(viewsText) ? $"{channelTitle} • {viewsText}" : channelTitle,
+            Description = string.Empty,
             ThumbnailUrl = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
             DurationSeconds = durationSec,
-            ResumePercent = resumePct
+            ResumePercent = resumePct,
+            PublishedTimeText = pubText,
+            PublishedAt = pubDate,
+            ViewCount = viewCount
         };
     }
 
@@ -240,6 +256,26 @@ public partial class YouTubeApiClient
         var durSec = vr.TryGetProperty("lengthText", out var lt) ? ParseDurationText(ExtractText(lt)) : 0;
         var pubText = vr.TryGetProperty("publishedTimeText", out var pt) ? ExtractText(pt) ?? string.Empty : string.Empty;
 
+        var desc = vr.TryGetProperty("descriptionSnippet", out var ds) ? ExtractText(ds) ?? string.Empty : string.Empty;
+        if (string.IsNullOrWhiteSpace(desc) && vr.TryGetProperty("detailedMetadataSnippets", out var dms) && dms.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var snip in dms.EnumerateArray())
+            {
+                if (snip.TryGetProperty("snippetText", out var st))
+                {
+                    desc = ExtractText(st) ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(desc))
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        var viewText = vr.TryGetProperty("viewCountText", out var vt) ? ExtractText(vt) ?? string.Empty : string.Empty;
+        var viewCount = ParseCountFromText(viewText);
+        var pubDate = ParseRelativeDate(pubText);
+
         return new YouTubeVideoItem
         {
             VideoId = vid,
@@ -247,7 +283,10 @@ public partial class YouTubeApiClient
             ChannelTitle = chanTitle,
             ThumbnailUrl = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
             DurationSeconds = durSec,
-            PublishedTimeText = pubText
+            PublishedTimeText = pubText,
+            PublishedAt = pubDate,
+            Description = desc,
+            ViewCount = viewCount
         };
     }
 
@@ -294,6 +333,78 @@ public partial class YouTubeApiClient
         }
 
         return 0;
+    }
+
+    public static DateTime? ParseRelativeDate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var lower = text.ToLowerInvariant();
+        var match = System.Text.RegularExpressions.Regex.Match(lower, @"(\d+)");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var n))
+        {
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        if (lower.Contains("jahr") || lower.Contains("year"))
+        {
+            return now.AddYears(-n);
+        }
+
+        if (lower.Contains("monat") || lower.Contains("month"))
+        {
+            return now.AddMonths(-n);
+        }
+
+        if (lower.Contains("woche") || lower.Contains("week"))
+        {
+            return now.AddDays(-n * 7);
+        }
+
+        if (lower.Contains("tag") || lower.Contains("day"))
+        {
+            return now.AddDays(-n);
+        }
+
+        if (lower.Contains("stunde") || lower.Contains("hour"))
+        {
+            return now.AddHours(-n);
+        }
+
+        if (lower.Contains("minute"))
+        {
+            return now.AddMinutes(-n);
+        }
+
+        return now.AddDays(-1);
+    }
+
+    public static long ParseCountFromText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        var cleaned = text.Replace(".", string.Empty).Replace(",", string.Empty).Trim();
+        var match = System.Text.RegularExpressions.Regex.Match(cleaned, @"([\d\.]+)\s*([KMBkmb]?)");
+        if (!match.Success || !double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+        {
+            return 0;
+        }
+
+        var suffix = match.Groups[2].Value.ToUpperInvariant();
+        return suffix switch
+        {
+            "B" => (long)(num * 1_000_000_000),
+            "M" => (long)(num * 1_000_000),
+            "K" => (long)(num * 1_000),
+            _ => (long)num
+        };
     }
 
     private static string ExtractBestThumbnailFromSnippet(JsonElement snippet)

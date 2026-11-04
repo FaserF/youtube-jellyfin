@@ -50,7 +50,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
         var targetDir = !string.IsNullOrWhiteSpace(config.StrmLibraryPath) ? config.StrmLibraryPath : "/data/youtube";
         Directory.CreateDirectory(targetDir);
 
-        var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : "fabian";
+        var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : null;
         var totalAdded = 0;
 
         // 1. Sync SmartTube Virtual Feed Categories as top-level Shows so they appear at the top of the YouTube Library
@@ -169,7 +169,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
         var musicRoot = !string.IsNullOrWhiteSpace(config.YouTubeMusicLibraryPath) ? config.YouTubeMusicLibraryPath : "/data/youtube-music";
         Directory.CreateDirectory(musicRoot);
 
-        var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : "fabian";
+        var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : null;
         var limit = config.YouTubeMusicMaxItemsPerFeed > 0 ? config.YouTubeMusicMaxItemsPerFeed : 25;
         var musicAdded = 0;
 
@@ -336,14 +336,41 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
                 added++;
             }
+
+            var nfoPath = Path.ChangeExtension(strmPath, ".nfo");
+            activePaths.Add(nfoPath);
+            if (!File.Exists(nfoPath))
+            {
+                var pubDate = v.PublishedAt ?? (!string.IsNullOrWhiteSpace(v.PublishedTimeText) ? Api.YouTubeApiClient.ParseRelativeDate(v.PublishedTimeText) : null) ?? DateTime.UtcNow.Date;
+                var dateStr = pubDate.ToString("yyyy-MM-dd");
+                var overview = Api.YouTubeApiClient.FormatRichOverview(v, v.DislikeStats, v.SponsorSegments);
+                var plot = System.Security.SecurityElement.Escape(overview);
+                var title = System.Security.SecurityElement.Escape(safeTitle);
+                var studio = System.Security.SecurityElement.Escape(!string.IsNullOrWhiteSpace(v.ChannelTitle) ? v.ChannelTitle : "YouTube");
+
+                var nfoContent = $@"<?xml version=""1.0"" encoding=""utf-8"" standalone=""yes""?>
+<episodedetails>
+  <title>{title}</title>
+  <season>1</season>
+  <episode>{epNum}</episode>
+  <plot>{plot}</plot>
+  <aired>{dateStr}</aired>
+  <premiered>{dateStr}</premiered>
+  <studio>{studio}</studio>
+  <uniqueid type=""youtube"">{v.VideoId}</uniqueid>
+</episodedetails>";
+                await File.WriteAllTextAsync(nfoPath, nfoContent, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        // Prune stale .strm files in this feed folder so feeds stay clean and never accumulate duplicates
+        // Prune stale .strm and .nfo files in this feed folder so feeds stay clean and never accumulate duplicates
         try
         {
-            foreach (var existing in Directory.GetFiles(seasonDir, "*.strm"))
+            foreach (var existing in Directory.GetFiles(seasonDir, "*.*"))
             {
-                if (!activePaths.Contains(existing))
+                var ext = Path.GetExtension(existing);
+                if ((ext.Equals(".strm", StringComparison.OrdinalIgnoreCase) || ext.Equals(".nfo", StringComparison.OrdinalIgnoreCase)) &&
+                    !activePaths.Contains(existing))
                 {
                     File.Delete(existing);
                 }

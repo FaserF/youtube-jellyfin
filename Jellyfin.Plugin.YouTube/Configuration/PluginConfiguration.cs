@@ -8,8 +8,8 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         EnableStreamingChannel = true;
         EnablePublicFallbackForUnlinkedUsers = true;
-        PrimaryJellyfinUser = "fabian";
-        PrimaryJellyfinUserId = "c24de2a9fe3644569746e53b80490646";
+        PrimaryJellyfinUser = string.Empty;
+        PrimaryJellyfinUserId = string.Empty;
         PreferredLanguage = "de-DE";
         PreferredRegion = "DE";
         PreferredMaxResolution = 2160;
@@ -27,11 +27,11 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableYouTubeMusicPlaylistsSync = true;
         YouTubeMusicMaxItemsPerFeed = 25;
         YouTubeMusicPreferredBitrate = 256;
-        PublicServerUrl = "https://jellyfin.tailnet.fabiseitz.de";
+        PublicServerUrl = string.Empty;
         YouTubeMusicLibraryPath = "/data/youtube-music";
         FetchThumbnails = true;
         StrmLibraryPath = "/data/youtube";
-        ProxyUrl = "socks5://easyproxy-sports:1080";
+        ProxyUrl = string.Empty;
         YtDlpPath = "/usr/local/bin/yt-dlp";
         OAuthClientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
         OAuthClientSecret = "SboVhoG9s0rNafixCSGGKXAT";
@@ -97,7 +97,7 @@ public class PluginConfiguration : BasePluginConfiguration
             {
                 JellyfinUser = PrimaryJellyfinUser,
                 JellyfinUserId = PrimaryJellyfinUserId,
-                AccountName = "Fabian (Primary)",
+                AccountName = !string.IsNullOrWhiteSpace(PrimaryJellyfinUser) ? $"{PrimaryJellyfinUser} (Primary)" : "Primary Account",
                 ClientId = OAuthClientId,
                 ClientSecret = OAuthClientSecret,
                 RefreshToken = PersistedRefreshToken,
@@ -111,16 +111,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool IsPrimaryUser(string? usernameOrId)
     {
-        if (string.IsNullOrWhiteSpace(usernameOrId))
+        if (string.IsNullOrWhiteSpace(usernameOrId) || (string.IsNullOrWhiteSpace(PrimaryJellyfinUser) && string.IsNullOrWhiteSpace(PrimaryJellyfinUserId)))
         {
             return false;
         }
 
         var norm = NormalizeId(usernameOrId);
-        return string.Equals(norm, NormalizeId(PrimaryJellyfinUser), StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(norm, NormalizeId(PrimaryJellyfinUserId), StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(norm, "fabian", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(norm, "c24de2a9fe3644569746e53b80490646", StringComparison.OrdinalIgnoreCase);
+        return (!string.IsNullOrWhiteSpace(PrimaryJellyfinUser) && string.Equals(norm, NormalizeId(PrimaryJellyfinUser), StringComparison.OrdinalIgnoreCase)) ||
+               (!string.IsNullOrWhiteSpace(PrimaryJellyfinUserId) && string.Equals(norm, NormalizeId(PrimaryJellyfinUserId), StringComparison.OrdinalIgnoreCase));
     }
 
     public static string NormalizeId(string? raw) =>

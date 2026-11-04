@@ -62,7 +62,7 @@
             modal.remove();
         };
 
-        var uid = (window.ApiClient && window.ApiClient.getCurrentUserId && window.ApiClient.getCurrentUserId()) || "fabian";
+        var uid = (window.ApiClient && window.ApiClient.getCurrentUserId && window.ApiClient.getCurrentUserId()) || "";
 
         document.getElementById("ytBtnLinkAccount").onclick = async function () {
             var panel = document.getElementById("ytAccountPanel");
@@ -95,7 +95,7 @@
             var me = (ud.users || []).find(function (u) {
                 return (u.id && u.id.replace(/-/g, "") === uid.replace(/-/g, "")) || u.username.toLowerCase() === uid.toLowerCase();
             });
-            var jfName = me ? me.username : "fabian";
+            var jfName = me ? me.username : (uid || "");
             var jfId = me ? me.id : uid;
 
             if (data.device_code) {

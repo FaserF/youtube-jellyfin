@@ -78,7 +78,7 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
         try
         {
             var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-            var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : "fabian";
+            var primaryUser = config.PrimaryJellyfinUser ?? string.Empty;
 
             using var client = new YouTubeApiClient(
                 _httpClientFactory.CreateClient("YouTube"),
@@ -115,16 +115,36 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
                 }
             }
 
-            // 1. Sync Native Jellyfin Playlists (Watch Later, Liked Videos, Subscriptions, and User Custom Playlists)
-            var playlistFeeds = new (string Name, string BrowseId)[]
+            // Clean up any legacy Jellyfin Playlists previously created by the plugin so the separate 'Playlists' tab is removed
+            try
             {
-                ("YouTube - Später ansehen (Watch Later)", "VLWL"),
-                ("YouTube - Videos, die ich mag (Liked)", "VLLV"),
-                ("YouTube - Empfehlungen (Home)", "FEwhat_to_watch"),
-                ("YouTube - Abo-Feed (Neueste)", "FEsubscriptions")
+                var legacyPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Playlist },
+                    Recursive = true
+                }).OfType<Playlist>().Where(p => p.Name != null && p.Name.Contains("YouTube", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                foreach (var lp in legacyPlaylists)
+                {
+                    _libraryManager.DeleteItem(lp, new DeleteOptions { DeleteFileLocation = true }, true);
+                    _logger.LogInformation("Purged legacy YouTube playlist '{Name}' in favor of Collections", lp.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not purge legacy YouTube playlists");
+            }
+
+            // 1. Sync Native Jellyfin Collections in 'Sammlungen' (Watch Later, Liked Videos, Subscriptions)
+            var collectionFeeds = new (string Name, string BrowseId)[]
+            {
+                ("YouTube: Watch Later", "VLWL"),
+                ("YouTube: Liked Videos", "VLLV"),
+                ("YouTube: Recommendations", "FEwhat_to_watch"),
+                ("YouTube: Subscriptions", "FEsubscriptions")
             };
 
-            foreach (var (plName, browseId) in playlistFeeds)
+            foreach (var (colName, browseId) in collectionFeeds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var feedVideos = await client.GetBrowseFeedAsync(browseId, primaryUser, 30, cancellationToken).ConfigureAwait(false);
@@ -136,11 +156,11 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
 
                 if (itemIds.Count > 0)
                 {
-                    await UpsertPlaylistAndCollectionAsync(plName, itemIds, userGuid).ConfigureAwait(false);
+                    await UpsertCollectionOnlyAsync(colName, itemIds).ConfigureAwait(false);
                 }
             }
 
-            // 2. Sync Custom User Playlists from YouTube
+            // 2. Sync Custom User Playlists from YouTube into BoxSet Collections
             var customPlaylists = await client.GetUserPlaylistsAsync(primaryUser, 20, cancellationToken).ConfigureAwait(false);
             foreach (var pl in customPlaylists)
             {
@@ -154,11 +174,11 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
 
                 if (itemIds.Count > 0)
                 {
-                    await UpsertPlaylistAndCollectionAsync($"YouTube Playlist - {pl.Title}", itemIds, userGuid).ConfigureAwait(false);
+                    await UpsertCollectionOnlyAsync($"YouTube: {pl.Title}", itemIds).ConfigureAwait(false);
                 }
             }
 
-            // 3. Sync Subscribed Channels into a "YouTube Abonnierte Kanäle" BoxSet Collection
+            // 3. Sync Subscribed Channels into 'YouTube: Subscribed Channels' BoxSet Collection
             var allSeries = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Series },
@@ -172,10 +192,10 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
 
             if (ytSeriesIds.Count > 0)
             {
-                await UpsertCollectionOnlyAsync("YouTube - Abonnierte Kanäle", ytSeriesIds).ConfigureAwait(false);
+                await UpsertCollectionOnlyAsync("YouTube: Subscribed Channels", ytSeriesIds).ConfigureAwait(false);
             }
 
-            // 4. Sync YouTube Music Audio Tracks into Native Jellyfin Music Playlists
+            // 4. Sync YouTube Music Tracks into Collections
             if (config.EnableYouTubeMusic && config.EnableYouTubeMusicPlaylistsSync)
             {
                 var allAudio = _libraryManager.GetItemList(new InternalItemsQuery
@@ -198,12 +218,12 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
                 {
                     var musicFeeds = new (string Name, string BrowseId)[]
                     {
-                        ("YouTube Music - Supermix & Charts", "FEmusic"),
-                        ("YouTube Music - Liked Songs", "VLLV"),
-                        ("YouTube Music - Listen Again", "FEhistory")
+                        ("YouTube Music: Supermix & Charts", "FEmusic"),
+                        ("YouTube Music: Liked Songs", "VLLV"),
+                        ("YouTube Music: Listen Again", "FEhistory")
                     };
 
-                    foreach (var (plName, browseId) in musicFeeds)
+                    foreach (var (colName, browseId) in musicFeeds)
                     {
                         var tracks = await client.GetBrowseFeedAsync(browseId, primaryUser, 30, cancellationToken).ConfigureAwait(false);
                         var trackIds = tracks
@@ -214,7 +234,7 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
 
                         if (trackIds.Count > 0)
                         {
-                            await UpsertPlaylistAndCollectionAsync(plName, trackIds, userGuid, MediaType.Audio).ConfigureAwait(false);
+                            await UpsertCollectionOnlyAsync(colName, trackIds).ConfigureAwait(false);
                         }
                     }
                 }
@@ -230,42 +250,7 @@ public class YouTubePlaylistAndCollectionSyncService : IHostedService
         }
     }
 
-    private async Task UpsertPlaylistAndCollectionAsync(string name, List<Guid> itemIds, Guid userGuid, MediaType mediaType = MediaType.Video)
-    {
-        await UpsertCollectionOnlyAsync(name, itemIds).ConfigureAwait(false);
 
-        if (userGuid == Guid.Empty)
-        {
-            return;
-        }
-
-        try
-        {
-            var existingPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { BaseItemKind.Playlist },
-                Recursive = true
-            }).OfType<Playlist>().ToList();
-
-            var existing = existingPlaylists.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (existing == null)
-            {
-                await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
-                {
-                    Name = name,
-                    ItemIdList = itemIds.ToArray(),
-                    UserId = userGuid,
-                    MediaType = mediaType,
-                    Public = true
-                }).ConfigureAwait(false);
-                _logger.LogInformation("Created native Jellyfin playlist '{PlaylistName}' with {Count} items", name, itemIds.Count);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not create/update Jellyfin playlist '{Name}'", name);
-        }
-    }
 
     private async Task UpsertCollectionOnlyAsync(string name, List<Guid> itemIds)
     {
