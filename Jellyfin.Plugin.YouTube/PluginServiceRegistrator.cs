@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.YouTube.Channels;
+using Jellyfin.Plugin.YouTube.Filters;
 using Jellyfin.Plugin.YouTube.Providers;
 using Jellyfin.Plugin.YouTube.Services;
 using MediaBrowser.Controller;
