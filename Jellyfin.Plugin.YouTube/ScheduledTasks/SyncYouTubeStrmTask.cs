@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Models;
@@ -112,18 +113,53 @@ public class SyncYouTubeStrmTask : IScheduledTask
         }
 
         // 2. Sync Subscribed Channels (A-Z) as individual Series folders
-        var channels = await client.GetSubscribedChannelsAsync(primaryUser, 40, cancellationToken).ConfigureAwait(false);
+        var channels = await client.GetSubscribedChannelsAsync(primaryUser, 60, cancellationToken).ConfigureAwait(false);
+        var syncedChannelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var ch in channels)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            syncedChannelIds.Add(ch.ChannelId);
             var safeChan = SanitizeFileName(ch.Title);
             var chanDir = Path.Combine(targetDir, $"{safeChan} [YouTubeChannel-{ch.ChannelId}]");
             var seasonDir = Path.Combine(chanDir, "Season 01");
             Directory.CreateDirectory(seasonDir);
 
-            var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 12, cancellationToken).ConfigureAwait(false);
-            // Make the newest upload on the first few channels have a near-future PremiereDate if needed or preserve real dates
+            var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 15, cancellationToken).ConfigureAwait(false);
             totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 2b. Also ensure any existing channel directories already on disk have their latest videos populated
+        try
+        {
+            if (Directory.Exists(targetDir))
+            {
+                foreach (var cDir in Directory.GetDirectories(targetDir, "*[YouTubeChannel-*]"))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var dirName = Path.GetFileName(cDir);
+                    var match = Regex.Match(dirName, @"\[YouTubeChannel-([^\]]+)\]");
+                    if (match.Success)
+                    {
+                        var cid = match.Groups[1].Value;
+                        if (!syncedChannelIds.Contains(cid))
+                        {
+                            var seasonDir = Path.Combine(cDir, "Season 01");
+                            Directory.CreateDirectory(seasonDir);
+                            var videos = await client.GetChannelRssFeedAsync(cid, 15, cancellationToken).ConfigureAwait(false);
+                            if (videos.Count > 0)
+                            {
+                                totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken).ConfigureAwait(false);
+                                syncedChannelIds.Add(cid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Error scanning existing on-disk channel directories");
         }
 
         // 3. Sync User's Custom YouTube Playlists as Shows in the YouTube Library as well
