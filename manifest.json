@@ -9,6 +9,22 @@
     "imageUrl": "https://raw.githubusercontent.com/FaserF/youtube-jellyfin/main/Jellyfin.Plugin.YouTube/thumb.png",
     "versions": [
       {
+        "version": "1.0.1.0",
+        "changelog": "Changes since `v1.0.0.0`:\n\n### ✨ New Features\n\n- hide YouTube and YouTube Music from Next Up (default ON) ([8bcb53d](https://github.com/FaserF/youtube-jellyfin/commit/8bcb53d))",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.0.1.0/youtube.zip",
+        "checksum": "960e6abbcb98aa5d8da4db133c9353db",
+        "timestamp": "2026-11-06T06:49:14Z"
+      },
+      {
+        "version": "1.0.1.0",
+        "changelog": "Changes since `v1.0.0.0`:\n\n### ✨ New Features\n\n- hide YouTube and YouTube Music from Next Up (default ON) ([8bcb53d](https://github.com/FaserF/youtube-jellyfin/commit/8bcb53d))",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.0.1.0/youtube.zip",
+        "checksum": "960e6abbcb98aa5d8da4db133c9353db",
+        "timestamp": "2026-11-06T06:49:14Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "Full Changelog:\n\n### ✨ New Features\n\n- smarttube search integration, ai-search coordination & anti-clutter defaults ([6bf6283](https://github.com/FaserF/youtube-jellyfin/commit/6bf6283))\n- yt-dlp auto-detection, anti-clutter channel tabs, configurable cache TTL & prefetch ([45ac9fc](https://github.com/FaserF/youtube-jellyfin/commit/45ac9fc))\n- **trailers:** native movie & TV trailer support with anonymous guest playback ([2c08612](https://github.com/FaserF/youtube-jellyfin/commit/2c08612))\n- **sync:** extract subscriptions via Innertube TV tabs and populate channel episodes ([1306e87](https://github.com/FaserF/youtube-jellyfin/commit/1306e87))\n- **universal:** multi-user config, direct CDN streaming, rich descriptions, and collections sync ([563f148](https://github.com/FaserF/youtube-jellyfin/commit/563f148))\n- **yt:** sponsorblock skip segments, native chapters, and auto-deployed HD library artwork ([016dbf4](https://github.com/FaserF/youtube-jellyfin/commit/016dbf4))\n- **yt:** multi-resolution, subtitle filtering, publish date sync, rich description, YT tags/genres ([2c02936](https://github.com/FaserF/youtube-jellyfin/commit/2c02936))\n- **playback,streams:** prune multi-audio HLS tracks, add YouTubePlaybackFilter, support full audio and subtitle parity ([74c4f59](https://github.com/FaserF/youtube-jellyfin/commit/74c4f59))\n- **music:** add optional (default ON) YouTube Music library, channel, audio streaming, and universal settings ([943e99e](https://github.com/FaserF/youtube-jellyfin/commit/943e99e))\n- YouTube music ([2f8b513](https://github.com/FaserF/youtube-jellyfin/commit/2f8b513))\n\n### 🐛 Bug Fixes\n\n- **artwork:** replace legacy Crunchyroll template images with official YouTube assets and high-res thumb ([08a1cbf](https://github.com/FaserF/youtube-jellyfin/commit/08a1cbf))\n- **services:** import YouTube.Filters namespace in PluginServiceRegistrator ([e8682d5](https://github.com/FaserF/youtube-jellyfin/commit/e8682d5))\n- **playback:** resolve internal TLS handshake failure, add single-flight yt-dlp, and fix universal audio streams ([3c7f6a6](https://github.com/FaserF/youtube-jellyfin/commit/3c7f6a6))\n- **playback:** honor X-Forwarded headers, handle AudioController endpoints, and verify playback ([1d2815a](https://github.com/FaserF/youtube-jellyfin/commit/1d2815a))\n- **playback:** resolve public server url in streams, filter yt music liked songs and populate recommendations ([ddf6190](https://github.com/FaserF/youtube-jellyfin/commit/ddf6190))\n- **playback,library:** strip HLS subtitle manifests for FFmpeg remux and populate all native Jellyfin library tabs ([c8cb151](https://github.com/FaserF/youtube-jellyfin/commit/c8cb151))\n\n### ♻️ Code Improvements",
         "targetAbi": "10.10.0.0",
