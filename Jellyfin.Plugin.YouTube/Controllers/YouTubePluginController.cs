@@ -165,6 +165,8 @@ public class YouTubePluginController : ControllerBase
 
     [HttpGet("stream/{videoId}/play")]
     [HttpGet("stream/{videoId}/master.m3u8")]
+    [HttpHead("stream/{videoId}/play")]
+    [HttpHead("stream/{videoId}/master.m3u8")]
     [AllowAnonymous]
     public async Task<ActionResult> PlayOrProxyStream(
         [FromRoute] string videoId,
@@ -179,15 +181,32 @@ public class YouTubePluginController : ControllerBase
             return NotFound(new { error = $"Unable to resolve YouTube stream for {cleanId}" });
         }
 
-        // Direct YouTube streaming: 302 Redirect directly to Google CDN
-        // Client connects directly to YouTube edge servers without passing bytes through Jellyfin!
-        var directUrl = !string.IsNullOrWhiteSpace(info.HlsManifestUrl)
-            ? info.HlsManifestUrl
-            : info.DirectStreamUrl;
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
+        Response.Headers["Access-Control-Allow-Headers"] = "Range, Accept-Encoding";
 
-        if (!string.IsNullOrWhiteSpace(directUrl))
+        if (HttpMethods.IsHead(Request.Method))
         {
-            return Redirect(directUrl);
+            Response.ContentType = "application/vnd.apple.mpegurl; charset=utf-8";
+            return Ok();
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.HlsManifestUrl))
+        {
+            try
+            {
+                var rawM3u8 = await client.HttpClient.GetStringAsync(info.HlsManifestUrl, cancellationToken).ConfigureAwait(false);
+                return Content(RewriteM3u8Urls(rawM3u8, info.HlsManifestUrl), "application/vnd.apple.mpegurl; charset=utf-8");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch/rewrite HLS manifest for {VideoId}, falling back to direct stream", cleanId);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(info.DirectStreamUrl))
+        {
+            return Redirect(info.DirectStreamUrl);
         }
 
         return NotFound(new { error = $"No streaming URL available for {cleanId}" });
@@ -345,10 +364,13 @@ public class YouTubePluginController : ControllerBase
 
     [HttpGet("proxy")]
     [HttpGet("proxy/{filename}")]
+    [HttpHead("proxy")]
+    [HttpHead("proxy/{filename}")]
     [AllowAnonymous]
-    public ActionResult ProxyUrl(
+    public async Task<ActionResult> ProxyUrl(
         [FromRoute] string? filename = null,
-        [FromQuery] string? u = null)
+        [FromQuery] string? u = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(u))
         {
@@ -370,8 +392,91 @@ public class YouTubePluginController : ControllerBase
             return BadRequest();
         }
 
-        // Direct stream: 302 Redirect to Google CDN so client streams directly from YouTube
-        return Redirect(targetUrl);
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
+        Response.Headers["Access-Control-Allow-Headers"] = "Range, Accept-Encoding";
+
+        using var client = CreateClient();
+
+        if (IsM3u8PlaylistUrl(targetUrl))
+        {
+            try
+            {
+                var rawM3u8 = await client.HttpClient.GetStringAsync(targetUrl, cancellationToken).ConfigureAwait(false);
+                return Content(RewriteM3u8Urls(rawM3u8, targetUrl), "application/vnd.apple.mpegurl; charset=utf-8");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch/rewrite sub-playlist {TargetUrl}", targetUrl);
+                return StatusCode(StatusCodes.Status502BadGateway);
+            }
+        }
+
+        // Stream video segment (.ts / .m4s / etc.) or timedtext through the server using proxy-aware HttpClient
+        return await ProxyRemoteUrlInternalAsync(client, targetUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ActionResult> ProxyRemoteUrlInternalAsync(YouTubeApiClient client, string targetUrl, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+            if (Request.Headers.TryGetValue("Range", out var rangeHeader))
+            {
+                req.Headers.TryAddWithoutValidation("Range", rangeHeader.ToArray());
+            }
+            else if (HttpMethods.IsHead(Request.Method))
+            {
+                req.Headers.TryAddWithoutValidation("Range", "bytes=0-0");
+            }
+
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
+            using var resp = await client.HttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            Response.StatusCode = (int)resp.StatusCode;
+
+            if (resp.Content.Headers.ContentRange != null)
+            {
+                Response.Headers["Content-Range"] = resp.Content.Headers.ContentRange.ToString();
+            }
+
+            if (resp.Content.Headers.ContentLength.HasValue)
+            {
+                Response.ContentLength = resp.Content.Headers.ContentLength.Value;
+            }
+
+            Response.Headers["Accept-Ranges"] = "bytes";
+
+            var isVtt = targetUrl.Contains("timedtext", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase);
+            var isAudioM4a = targetUrl.Contains("mime=audio%2Fmp4", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("mime=audio/mp4", StringComparison.OrdinalIgnoreCase);
+            var isAudioWebm = targetUrl.Contains("mime=audio%2Fwebm", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("mime=audio/webm", StringComparison.OrdinalIgnoreCase);
+            var isVideoMp4 = targetUrl.Contains("mime=video%2Fmp4", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("mime=video/mp4", StringComparison.OrdinalIgnoreCase);
+            Response.ContentType = isVtt ? "text/vtt; charset=utf-8"
+                : isAudioM4a ? "audio/mp4"
+                : isAudioWebm ? "audio/webm"
+                : isVideoMp4 ? "video/mp4"
+                : (resp.Content.Headers.ContentType?.ToString() ?? "video/mp2t");
+
+            if (!HttpMethods.IsHead(Request.Method))
+            {
+                await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client seeked or cancelled request
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to proxy stream data from {TargetUrl}", targetUrl);
+            if (!Response.HasStarted)
+            {
+                Response.StatusCode = StatusCodes.Status502BadGateway;
+            }
+        }
+
+        return new EmptyResult();
     }
 
     private static bool IsM3u8PlaylistUrl(string url) =>
@@ -384,12 +489,34 @@ public class YouTubePluginController : ControllerBase
          url.Contains("hls_variant", StringComparison.OrdinalIgnoreCase) ||
          url.Contains("timedtext_playlist", StringComparison.OrdinalIgnoreCase));
 
+    private static string GetProxyExtensionForUrl(string url)
+    {
+        if (IsM3u8PlaylistUrl(url))
+        {
+            return "index.m3u8";
+        }
+
+        if (url.Contains("/api/timedtext", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("fmt=vtt", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "sub.vtt";
+        }
+
+        return "seg.ts";
+    }
+
     private string RewriteM3u8Urls(string m3u8Content, string baseUrl)
     {
         var baseUri = new Uri(baseUrl);
         var sb = new StringBuilder();
         var lines = m3u8Content.Split('\n');
         var prefLang = Config.PreferredLanguage ?? "de";
+
+        var reqProto = Request.Headers["X-Forwarded-Proto"].FirstOrDefault();
+        var reqHost = Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? Request.Host.Value;
+        var scheme = !string.IsNullOrWhiteSpace(reqProto) ? reqProto : Request.Scheme;
+        var serverUrl = Config.GetPublicServerUrl(scheme, reqHost);
 
         // Keep track of audio groups and whether a default audio track was chosen per group
         var defaultAudioSetForGroup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -449,18 +576,22 @@ public class YouTubePluginController : ControllerBase
                     }
                 }
 
-                // Rewrite URI="..." to direct Google CDN absolute URLs for direct streaming
+                // Rewrite URI="..." inside #EXT-X-MEDIA or #EXT-X-MAP tags
                 var uriUpdated = System.Text.RegularExpressions.Regex.Replace(line, @"URI=""([^""]+)""", m =>
                 {
                     var abs = new Uri(baseUri, m.Groups[1].Value).ToString();
-                    return $"URI=\"{abs}\"";
+                    var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                    var ext = GetProxyExtensionForUrl(abs);
+                    return $"URI=\"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
                 });
                 sb.AppendLine(uriUpdated);
             }
             else
             {
                 var abs = new Uri(baseUri, line).ToString();
-                sb.AppendLine(abs);
+                var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                var ext = GetProxyExtensionForUrl(abs);
+                sb.AppendLine($"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
             }
         }
 

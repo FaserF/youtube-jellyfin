@@ -6,7 +6,7 @@ public class PluginConfiguration : BasePluginConfiguration
 {
     public PluginConfiguration()
     {
-        EnableStreamingChannel = true;
+        EnableStreamingChannel = false;
         EnablePublicFallbackForUnlinkedUsers = true;
         PrimaryJellyfinUser = string.Empty;
         PrimaryJellyfinUserId = string.Empty;

@@ -483,7 +483,7 @@
                         document.getElementById("chkEnableLive").checked = !!config.EnableLiveTab;
                         document.getElementById("chkEnableTrailersCat").checked = !!config.EnableTrailersCategoryTab;
 
-                        document.getElementById("chkEnableStreamingChannel").checked = config.EnableStreamingChannel !== false;
+                        document.getElementById("chkEnableStreamingChannel").checked = config.EnableStreamingChannel === true;
                         document.getElementById("chkEnablePublicFallback").checked = config.EnablePublicFallbackForUnlinkedUsers !== false;
                         document.getElementById("chkEnableSponsorBlock").checked = config.EnableSponsorBlock !== false;
                         document.getElementById("txtSponsorBlockCategories").value = config.SponsorBlockCategories || "sponsor,selfpromo,interaction,intro,outro";

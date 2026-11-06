@@ -19,7 +19,7 @@ public class YouTubePluginFullParityTests
     {
         var config = new PluginConfiguration();
 
-        config.EnableStreamingChannel.Should().BeTrue();
+        config.EnableStreamingChannel.Should().BeFalse();
         config.EnablePublicFallbackForUnlinkedUsers.Should().BeTrue();
         config.PreferredLanguage.Should().Be("en-US");
         config.PreferredRegion.Should().Be("US");
