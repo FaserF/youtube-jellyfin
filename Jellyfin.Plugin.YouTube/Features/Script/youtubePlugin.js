@@ -122,7 +122,8 @@
             resContainer.innerHTML = "<div>Searching " + (mode === "music" ? "YouTube Music" : "YouTube") + "...</div>";
             try {
                 var r = await fetch("/api/youtubePlugin/search?q=" + encodeURIComponent(searchQuery) + "&userId=" + encodeURIComponent(uid));
-                var items = await r.json();
+                var resData = await r.json();
+                var items = Array.isArray(resData) ? resData : (resData.items || []);
                 resContainer.innerHTML = (items || []).map(function (v) {
                     return '<div style="background:#1c1c1e;border-radius:8px;overflow:hidden;border:1px solid #2c2c2e;display:flex;flex-direction:column;">' +
                         '<img src="' + v.ThumbnailUrl + '" style="width:100%;aspect-ratio:16/9;object-fit:cover;" />' +

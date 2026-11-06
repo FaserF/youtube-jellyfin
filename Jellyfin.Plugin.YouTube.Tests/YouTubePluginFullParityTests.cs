@@ -21,8 +21,8 @@ public class YouTubePluginFullParityTests
 
         config.EnableStreamingChannel.Should().BeTrue();
         config.EnablePublicFallbackForUnlinkedUsers.Should().BeTrue();
-        config.PreferredLanguage.Should().Be("de-DE");
-        config.PreferredRegion.Should().Be("DE");
+        config.PreferredLanguage.Should().Be("en-US");
+        config.PreferredRegion.Should().Be("US");
         config.PreferredMaxResolution.Should().Be(2160);
         config.EnableSponsorBlock.Should().BeTrue();
         config.SponsorBlockCategories.Should().Contain("sponsor");
@@ -247,7 +247,7 @@ public class YouTubePluginFullParityTests
         var config = new PluginConfiguration();
         config.EnableTrailerSupport.Should().BeTrue();
         config.EnableAutoTrailerStrmSync.Should().BeTrue();
-        config.TrailerLanguage.Should().Be("de-DE");
+        config.TrailerLanguage.Should().Be("en-US");
         config.HideFromContinueWatching.Should().BeTrue();
     }
 

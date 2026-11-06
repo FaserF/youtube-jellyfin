@@ -127,6 +127,63 @@
                     </div>
 
                     <div class="verticalSection">
+                        <h2 class="sectionTitle">🔍 Jellyfin &amp; AI-Search Integration</h2>
+                        <p>Configure how YouTube search integrates with Jellyfin's native search, Plezy/mobile apps, and the AI Search plugin.</p>
+                        
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="selectYtSearchMode">YouTube Search Integration Mode</label>
+                            <select is="emby-select" id="selectYtSearchMode" class="emby-select-withcolor emby-select">
+                                <option value="SearchTab">Search Tab / Row (Separate YouTube results row on web)</option>
+                                <option value="NativeSearch">Native Search (Plezy / Mobile apps / Universal Jellyfin Search)</option>
+                                <option value="Disabled">Disabled (No YouTube search anywhere)</option>
+                            </select>
+                            <div class="fieldDescription">
+                                <strong>Native Search:</strong> Injects YouTube results directly into Jellyfin's native search API (compatible with Plezy, Infuse, Android TV).<br/>
+                                <strong>Search Tab:</strong> Shows a dedicated search tab / modal in the web interface.<br/>
+                                <strong>Disabled:</strong> Completely turns off YouTube search integration.
+                            </div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkShowYtInGlobalSearch" type="checkbox" is="emby-checkbox" />
+                                <span>Show YouTube Library in Global Search without "youtube"/"yt" Keyword</span>
+                            </label>
+                            <div class="fieldDescription">Default: OFF (Anti-Clutter). When disabled, YouTube items only appear in searches if "youtube" or "yt" is explicitly typed.</div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkYtSearchOnNoResults" type="checkbox" is="emby-checkbox" />
+                                <span>Fallback YouTube Search when 0 Local Results Found</span>
+                            </label>
+                            <div class="fieldDescription">Default: ON. If a local Jellyfin search returns no hits, automatically trigger a YouTube search.</div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkYtSuppressAi" type="checkbox" is="emby-checkbox" />
+                                <span>Suppress AI-Search when "youtube" / "yt" Keyword Detected</span>
+                            </label>
+                            <div class="fieldDescription">Default: ON. When the user explicitly searches for YouTube content, skip AI Search to deliver fast, direct YouTube results.</div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkYtShowNonLocal" type="checkbox" is="emby-checkbox" />
+                                <span>Include Non-Local YouTube Results (Streamable Online Videos)</span>
+                            </label>
+                            <div class="fieldDescription">Default: ON. Surfaces streamable online YouTube videos even if they are not stored in your local Jellyfin library.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtYtSearchMaxResults">Max YouTube Search Results</label>
+                            <input id="txtYtSearchMaxResults" type="number" is="emby-input" min="1" max="50" />
+                            <div class="fieldDescription">Default: 15. Maximum number of YouTube search results returned per query.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
                         <h2 class="sectionTitle">📺 SmartTube Navigation &amp; Channel Categories (Anti-Clutter Filter)</h2>
                         <p>Select which tabs are displayed in the YouTube channel. Clutter-heavy categories (such as Trends &amp; Recommendations) are <strong>disabled by default</strong> to keep the media library clean and fast.</p>
                         
@@ -342,6 +399,13 @@
                         document.getElementById("chkEnablePrefetch").checked = config.EnableSpeculativePrefetch !== false;
                         document.getElementById("txtCacheTtl").value = String(config.StreamCacheTtlHours || 6);
 
+                        document.getElementById("selectYtSearchMode").value = config.YtSearchMode || "SearchTab";
+                        document.getElementById("chkShowYtInGlobalSearch").checked = !!config.ShowYtInGlobalSearch;
+                        document.getElementById("chkYtSearchOnNoResults").checked = config.YtSearchOnNoResults !== false;
+                        document.getElementById("chkYtSuppressAi").checked = config.YtSearchSuppressAiWhenYtKeyword !== false;
+                        document.getElementById("chkYtShowNonLocal").checked = config.YtSearchShowNonLocalResults !== false;
+                        document.getElementById("txtYtSearchMaxResults").value = String(config.YtSearchMaxResults || 15);
+
                         document.getElementById("chkEnableSubsFeed").checked = config.EnableSubscriptionsFeedTab !== false;
                         document.getElementById("chkEnableSubChannels").checked = config.EnableSubscribedChannelsTab !== false;
                         document.getElementById("chkEnableHistory").checked = config.EnableHistoryTab !== false;
@@ -421,6 +485,13 @@
                         config.AutoDetectYtDlp = document.getElementById("chkAutoDetectYtDlp").checked;
                         config.EnableSpeculativePrefetch = document.getElementById("chkEnablePrefetch").checked;
                         config.StreamCacheTtlHours = parseInt(document.getElementById("txtCacheTtl").value, 10) || 6;
+
+                        config.YtSearchMode = document.getElementById("selectYtSearchMode").value;
+                        config.ShowYtInGlobalSearch = document.getElementById("chkShowYtInGlobalSearch").checked;
+                        config.YtSearchOnNoResults = document.getElementById("chkYtSearchOnNoResults").checked;
+                        config.YtSearchSuppressAiWhenYtKeyword = document.getElementById("chkYtSuppressAi").checked;
+                        config.YtSearchShowNonLocalResults = document.getElementById("chkYtShowNonLocal").checked;
+                        config.YtSearchMaxResults = parseInt(document.getElementById("txtYtSearchMaxResults").value, 10) || 15;
 
                         config.EnableSubscriptionsFeedTab = document.getElementById("chkEnableSubsFeed").checked;
                         config.EnableSubscribedChannelsTab = document.getElementById("chkEnableSubChannels").checked;

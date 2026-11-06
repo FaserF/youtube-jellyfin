@@ -13,3 +13,4 @@ obj/
 *cookies*.txt
 *credentials*
 repo.tar.gz
+build.ps1

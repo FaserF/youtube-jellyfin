@@ -53,6 +53,12 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableLiveTab = false;            // Anti-clutter default: off
         EnableTrailersCategoryTab = false;// Anti-clutter default: off
         EnableSearchTab = true;
+        YtSearchMode = "SearchTab";
+        ShowYtInGlobalSearch = false;
+        YtSearchOnNoResults = true;
+        YtSearchSuppressAiWhenYtKeyword = true;
+        YtSearchMaxResults = 15;
+        YtSearchShowNonLocalResults = true;
         OAuthClientId = string.Empty;
         OAuthClientSecret = string.Empty;
         PersistedRefreshToken = string.Empty;
@@ -109,6 +115,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableLiveTab { get; set; }
     public bool EnableTrailersCategoryTab { get; set; }
     public bool EnableSearchTab { get; set; }
+    public string YtSearchMode { get; set; }
+    public bool ShowYtInGlobalSearch { get; set; }
+    public bool YtSearchOnNoResults { get; set; }
+    public bool YtSearchSuppressAiWhenYtKeyword { get; set; }
+    public int YtSearchMaxResults { get; set; }
+    public bool YtSearchShowNonLocalResults { get; set; }
     public string OAuthClientId { get; set; }
     public string OAuthClientSecret { get; set; }
     public string PersistedRefreshToken { get; set; }

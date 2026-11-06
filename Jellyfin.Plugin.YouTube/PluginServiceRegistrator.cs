@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.YouTube.Channels;
 using Jellyfin.Plugin.YouTube.Filters;
 using Jellyfin.Plugin.YouTube.Providers;
+using Jellyfin.Plugin.YouTube.Search;
 using Jellyfin.Plugin.YouTube.Services;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
@@ -21,9 +22,12 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IChannel, YouTubeChannel>();
         serviceCollection.AddSingleton<IMediaSourceProvider, YouTubeMediaSourceProvider>();
         serviceCollection.AddSingleton<MediaBrowser.Controller.MediaSegments.IMediaSegmentProvider, YouTubeMediaSegmentProvider>();
+        serviceCollection.AddSingleton<IInternalSearchProvider, YouTubeSearchProvider>();
+        serviceCollection.AddSingleton<YouTubeGlobalSearchFilter>();
         serviceCollection.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
         {
             options.Filters.Add<YouTubePlaybackFilter>();
+            options.Filters.AddService<YouTubeGlobalSearchFilter>();
         });
     }
 }

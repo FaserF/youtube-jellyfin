@@ -440,15 +440,49 @@ public class YouTubePluginController : ControllerBase
 
     [HttpGet("search")]
     [AllowAnonymous]
-    public async Task<ActionResult<List<YouTubeVideoItem>>> Search([FromQuery] string q, [FromQuery] string? userId = null, [FromQuery] int limit = 25, CancellationToken cancellationToken = default)
+    public async Task<ActionResult> Search([FromQuery] string q, [FromQuery] string? userId = null, [FromQuery] int? limit = null, [FromQuery] bool? includeNonLocal = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(q))
         {
-            return Ok(new List<YouTubeVideoItem>());
+            return Ok(new { items = new List<YouTubeVideoItem>(), suppressAi = false });
         }
 
+        var isYt = Jellyfin.Plugin.YouTube.Search.YouTubeSearchProvider.IsYouTubeQuery(q);
+        var cleanTerm = isYt
+            ? System.Text.RegularExpressions.Regex.Replace(q, @"\byt\b|\byoutube\b", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim().Trim(':').Trim()
+            : q;
+
+        if (string.IsNullOrWhiteSpace(cleanTerm))
+        {
+            return Ok(new { items = new List<YouTubeVideoItem>(), suppressAi = isYt && Config.YtSearchSuppressAiWhenYtKeyword });
+        }
+
+        var maxResults = limit ?? Config.YtSearchMaxResults;
         using var client = CreateClient();
-        return Ok(await client.SearchVideosAsync(q, userId, limit, cancellationToken).ConfigureAwait(false));
+        var videos = await client.SearchVideosAsync(cleanTerm, userId, maxResults, cancellationToken).ConfigureAwait(false);
+
+        var allowNonLocal = includeNonLocal ?? Config.YtSearchShowNonLocalResults;
+        if (!allowNonLocal)
+        {
+            // Filter to only local items
+            videos = videos.Where(v =>
+            {
+                var matches = _libraryManager.GetItemList(new MediaBrowser.Controller.Entities.InternalItemsQuery
+                {
+                    HasAnyProviderId = new Dictionary<string, string> { ["YouTubeId"] = v.VideoId },
+                    Limit = 1,
+                    DtoOptions = new MediaBrowser.Controller.Dto.DtoOptions(false)
+                });
+                return matches.Count > 0;
+            }).ToList();
+        }
+
+        return Ok(new
+        {
+            items = videos,
+            suppressAi = isYt && Config.YtSearchSuppressAiWhenYtKeyword,
+            isYtKeyword = isYt
+        });
     }
 
     [HttpPost("rate/{videoId}")]
