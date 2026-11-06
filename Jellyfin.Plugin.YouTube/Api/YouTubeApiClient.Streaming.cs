@@ -300,7 +300,7 @@ public partial class YouTubeApiClient
 
                 info.HlsManifestUrl = bestHlsManifest ?? string.Empty;
                 info.DirectStreamUrl = bestCombinedUrl ?? bestHlsManifest ?? bestVideoOnlyUrl ?? bestAudioOnlyUrl ?? string.Empty;
-                info.AudioStreamUrl = bestAudioOnlyUrl ?? string.Empty;
+                info.AudioStreamUrl = bestAudioOnlyUrl ?? bestCombinedUrl ?? string.Empty;
 
                 ParseSubtitlesAndCaptions(root, info);
 
@@ -388,7 +388,7 @@ public partial class YouTubeApiClient
             "--socket-timeout",
             "5",
             "--extractor-args",
-            "youtube:player_client=tv,android",
+            "youtube:player_client=visionos,tv",
             "--compat-options",
             "no-youtube-unavailable-videos",
             "--no-write-auto-subs",

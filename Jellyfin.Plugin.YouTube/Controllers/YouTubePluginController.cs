@@ -196,8 +196,11 @@ public class YouTubePluginController : ControllerBase
     [HttpGet("stream/{videoId}/audio.m4a")]
     [HttpGet("stream/{videoId}/audio")]
     [HttpGet("stream/{videoId}/audio-{formatId}.m4a")]
+    [HttpHead("stream/{videoId}/audio.m4a")]
+    [HttpHead("stream/{videoId}/audio")]
+    [HttpHead("stream/{videoId}/audio-{formatId}.m4a")]
     [AllowAnonymous]
-    public async Task<ActionResult> PlayOrProxyAudioStream(
+    public async Task PlayOrProxyAudioStream(
         [FromRoute] string videoId,
         [FromRoute] string? formatId = null,
         [FromQuery] string? lang = null,
@@ -208,7 +211,8 @@ public class YouTubePluginController : ControllerBase
         var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
         if (info == null)
         {
-            return NotFound(new { error = $"Unable to resolve YouTube Music audio stream for {cleanId}" });
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
         }
 
         string? audioUrl = null;
@@ -233,12 +237,62 @@ public class YouTubePluginController : ControllerBase
                 : (bestAacTrack?.StreamUrl ?? info.AudioTracks.FirstOrDefault(a => a.IsDefault)?.StreamUrl ?? info.DirectStreamUrl);
         }
 
-        if (!string.IsNullOrWhiteSpace(audioUrl))
+        if (string.IsNullOrWhiteSpace(audioUrl))
         {
-            return Redirect(audioUrl);
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
         }
 
-        return NotFound();
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, audioUrl);
+            if (Request.Headers.TryGetValue("Range", out var rangeHeaders))
+            {
+                req.Headers.TryAddWithoutValidation("Range", rangeHeaders.ToArray());
+            }
+            else if (HttpMethods.IsHead(Request.Method))
+            {
+                req.Headers.TryAddWithoutValidation("Range", "bytes=0-0");
+            }
+
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+            req.Headers.TryAddWithoutValidation("Referer", "https://music.youtube.com/");
+
+            using var resp = await client.HttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+            Response.StatusCode = (int)resp.StatusCode;
+            Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "audio/mp4";
+
+            if (resp.Content.Headers.ContentLength.HasValue)
+            {
+                Response.ContentLength = resp.Content.Headers.ContentLength.Value;
+            }
+
+            if (resp.Content.Headers.ContentRange != null)
+            {
+                Response.Headers["Content-Range"] = resp.Content.Headers.ContentRange.ToString();
+            }
+
+            Response.Headers["Accept-Ranges"] = "bytes";
+
+            if (!HttpMethods.IsHead(Request.Method))
+            {
+                await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected / seeked
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error proxying audio stream for {VideoId}", cleanId);
+            if (!Response.HasStarted)
+            {
+                Response.StatusCode = StatusCodes.Status502BadGateway;
+            }
+        }
     }
 
     [HttpGet("stream/{videoId}/subtitles/{lang}.vtt")]

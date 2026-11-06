@@ -33,7 +33,10 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
         var isAudioPath = path.Contains("/Audio/", StringComparison.OrdinalIgnoreCase) &&
                           (path.EndsWith("/stream", StringComparison.OrdinalIgnoreCase) ||
                            path.EndsWith("/stream.mp3", StringComparison.OrdinalIgnoreCase) ||
-                           path.EndsWith("/stream.m4a", StringComparison.OrdinalIgnoreCase));
+                           path.EndsWith("/stream.m4a", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith("/universal", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith("/universal.mp3", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith("/universal.m4a", StringComparison.OrdinalIgnoreCase));
 
         if (isVideoPath || isAudioPath)
         {

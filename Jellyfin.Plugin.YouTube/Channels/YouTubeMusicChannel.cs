@@ -344,9 +344,7 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         var bitrate = (config.YouTubeMusicPreferredBitrate > 0 ? config.YouTubeMusicPreferredBitrate : 256) * 1000;
         const string internalServerUrl = "http://127.0.0.1:8096";
 
-        var directAudioUrl = !string.IsNullOrWhiteSpace(streamInfo.AudioStreamUrl)
-            ? streamInfo.AudioStreamUrl
-            : $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a";
+        var directAudioUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a";
 
         var source = new MediaSourceInfo
         {
