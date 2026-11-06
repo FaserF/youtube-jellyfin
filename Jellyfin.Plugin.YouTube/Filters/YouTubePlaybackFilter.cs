@@ -107,6 +107,20 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
             }
         }
 
+        if (config?.HideFromNextUp == true &&
+            path.Contains("/NextUp", StringComparison.OrdinalIgnoreCase) &&
+            context.Result is ObjectResult nextUpObjResult &&
+            nextUpObjResult.Value is QueryResult<BaseItemDto> nextUpResult &&
+            nextUpResult.Items != null)
+        {
+            var filtered = nextUpResult.Items.Where(item => !YouTubeIdKeys.IsYouTubeDto(item)).ToList();
+            if (filtered.Count != nextUpResult.Items.Count)
+            {
+                nextUpResult.Items = filtered;
+                nextUpResult.TotalRecordCount = filtered.Count;
+            }
+        }
+
         if (path.EndsWith("/PlaybackInfo", StringComparison.OrdinalIgnoreCase) &&
             context.Result is ObjectResult { Value: MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbResp } &&
             pbResp.MediaSources is { Count: > 0 })

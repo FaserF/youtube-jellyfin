@@ -101,6 +101,13 @@
                             </label>
                             <div class="fieldDescription">Prevents YouTube videos, trailers, and YouTube Music tracks from appearing under Continue Watching on the Jellyfin home screen.</div>
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkHideFromNextUp" type="checkbox" is="emby-checkbox" />
+                                <span>Hide YouTube from Next Up (Nächste Folgen)</span>
+                            </label>
+                            <div class="fieldDescription">Prevents subscribed YouTube channel series/episodes and music tracks from appearing in the Next Up / Nächste Folgen row on the Jellyfin home screen.</div>
+                        </div>
                         <div class="inputContainer">
                             <label class="inputLabel" for="selectMaxRes">Preferred Maximum Resolution</label>
                             <select is="emby-select" id="selectMaxRes" class="emby-select-withcolor emby-select">
@@ -427,6 +434,7 @@
                         document.getElementById("chkEnableRyd").checked = config.EnableReturnYouTubeDislike !== false;
                         document.getElementById("chkEnableFavLike").checked = config.EnableFavoriteToLikeSync !== false;
                         document.getElementById("chkHideFromContinueWatching").checked = config.HideFromContinueWatching !== false;
+                        document.getElementById("chkHideFromNextUp").checked = config.HideFromNextUp !== false;
                         document.getElementById("selectMaxRes").value = String(config.PreferredMaxResolution || 2160);
                         document.getElementById("txtProxyUrl").value = config.ProxyUrl || "";
                         document.getElementById("txtStrmPath").value = config.StrmLibraryPath || "/data/youtube";
@@ -514,6 +522,7 @@
                         config.EnableReturnYouTubeDislike = document.getElementById("chkEnableRyd").checked;
                         config.EnableFavoriteToLikeSync = document.getElementById("chkEnableFavLike").checked;
                         config.HideFromContinueWatching = document.getElementById("chkHideFromContinueWatching").checked;
+                        config.HideFromNextUp = document.getElementById("chkHideFromNextUp").checked;
                         config.PreferredMaxResolution = parseInt(document.getElementById("selectMaxRes").value, 10) || 2160;
                         config.ProxyUrl = document.getElementById("txtProxyUrl").value.trim();
                         config.StrmLibraryPath = document.getElementById("txtStrmPath").value.trim();

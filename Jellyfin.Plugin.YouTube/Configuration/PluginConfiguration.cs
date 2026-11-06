@@ -19,6 +19,7 @@ public class PluginConfiguration : BasePluginConfiguration
         EnablePlayheadSync = true;
         EnableFavoriteToLikeSync = true;
         HideFromContinueWatching = true;
+        HideFromNextUp = true;
         EnableYouTubeLibrary = true;
         EnableStrmSync = true;
         EnableMovieSupport = true;
@@ -81,6 +82,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnablePlayheadSync { get; set; }
     public bool EnableFavoriteToLikeSync { get; set; }
     public bool HideFromContinueWatching { get; set; }
+    public bool HideFromNextUp { get; set; }
     public bool EnableYouTubeLibrary { get; set; }
     public bool EnableStrmSync { get; set; }
     public bool EnableMovieSupport { get; set; }
