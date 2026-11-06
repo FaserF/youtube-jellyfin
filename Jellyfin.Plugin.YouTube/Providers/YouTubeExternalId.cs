@@ -4,6 +4,7 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 
@@ -149,6 +150,81 @@ public static class YouTubeIdKeys
 
         var m = PlaylistPathRegex.Match(path);
         return m.Success ? m.Groups[1].Value : null;
+    }
+
+    public static bool IsYouTubeItem(IHasProviderIds? item, string? path = null)
+    {
+        if (item?.ProviderIds != null)
+        {
+            if (item.ProviderIds.ContainsKey(Video) ||
+                item.ProviderIds.ContainsKey(Audio) ||
+                item.ProviderIds.ContainsKey(Movie) ||
+                item.ProviderIds.ContainsKey(Channel) ||
+                item.ProviderIds.ContainsKey(Playlist) ||
+                item.ProviderIds.ContainsKey(Album) ||
+                item.ProviderIds.ContainsKey(Artist) ||
+                item.ProviderIds.ContainsKey("YouTube") ||
+                item.ProviderIds.ContainsKey("YouTubeMusic"))
+            {
+                return true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            if (path.Contains("/data/youtube", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("/data/youtube-music", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("YouTubeVideo-", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("YouTubeAudio-", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsYouTubeDto(BaseItemDto? dto)
+    {
+        if (dto == null)
+        {
+            return false;
+        }
+
+        if (dto.ProviderIds != null)
+        {
+            if (dto.ProviderIds.ContainsKey(Video) ||
+                dto.ProviderIds.ContainsKey(Audio) ||
+                dto.ProviderIds.ContainsKey(Movie) ||
+                dto.ProviderIds.ContainsKey(Channel) ||
+                dto.ProviderIds.ContainsKey(Playlist) ||
+                dto.ProviderIds.ContainsKey(Album) ||
+                dto.ProviderIds.ContainsKey(Artist) ||
+                dto.ProviderIds.ContainsKey("YouTube") ||
+                dto.ProviderIds.ContainsKey("YouTubeMusic"))
+            {
+                return true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.Path))
+        {
+            if (dto.Path.Contains("/data/youtube", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains("/data/youtube-music", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains("YouTubeVideo-", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains("YouTubeAudio-", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
+                dto.Path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

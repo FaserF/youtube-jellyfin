@@ -36,7 +36,29 @@
                     </div>
 
                     <div class="verticalSection">
-                        <h2 class="sectionTitle">SmartTube Playback, SponsorBlock &amp; Dislikes</h2>
+                        <h2 class="sectionTitle">SmartTube Playback, yt-dlp &amp; Cache Performance</h2>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtYtDlpPath">yt-dlp Binary Path</label>
+                            <input id="txtYtDlpPath" type="text" is="emby-input" />
+                            <div class="fieldDescription">Path to yt-dlp inside the container (e.g. <code>/config/bin/yt-dlp</code> or <code>/usr/local/bin/yt-dlp</code>).</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkAutoDetectYtDlp" type="checkbox" is="emby-checkbox" />
+                                <span>Auto-Detect yt-dlp Binary (/config/bin/yt-dlp, /usr/local/bin, PATH)</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkEnablePrefetch" type="checkbox" is="emby-checkbox" />
+                                <span>Enable Speculative Stream Prefetching (Pre-resolves first 3 videos for instant &lt;1.5s playback)</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtCacheTtl">Stream Manifest Cache Lifetime (Hours)</label>
+                            <input id="txtCacheTtl" type="number" min="1" max="24" is="emby-input" />
+                            <div class="fieldDescription">Re-uses extracted stream URLs without re-running yt-dlp (Default: 6 hours).</div>
+                        </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkEnableStreamingChannel" type="checkbox" is="emby-checkbox" />
@@ -46,7 +68,7 @@
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkEnablePublicFallback" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users (If unchecked, YouTube is strictly exclusive to linked users)</span>
+                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users</span>
                             </label>
                         </div>
                         <div class="checkboxContainer checkboxContainer-withDescription">
@@ -72,6 +94,13 @@
                                 <span>Sync Jellyfin Favorite (♥️) to YouTube Like</span>
                             </label>
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkHideFromContinueWatching" type="checkbox" is="emby-checkbox" />
+                                <span>Hide YouTube &amp; YouTube Music from Continue Watching</span>
+                            </label>
+                            <div class="fieldDescription">Prevents YouTube videos, trailers, and YouTube Music tracks from appearing under Continue Watching on the Jellyfin home screen.</div>
+                        </div>
                         <div class="inputContainer">
                             <label class="inputLabel" for="selectMaxRes">Preferred Maximum Resolution</label>
                             <select is="emby-select" id="selectMaxRes" class="emby-select-withcolor emby-select">
@@ -94,6 +123,91 @@
                                 <input id="chkEnableYouTubeLibrary" type="checkbox" is="emby-checkbox" />
                                 <span>Enable Native YouTube Video Library &amp; Automatic .strm Sync</span>
                             </label>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">📺 SmartTube Navigation &amp; Channel Categories (Anti-Clutter Filter)</h2>
+                        <p>Select which tabs are displayed in the YouTube channel. Clutter-heavy categories (such as Trends &amp; Recommendations) are <strong>disabled by default</strong> to keep the media library clean and fast.</p>
+                        
+                        <div style="background:#18181b;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:15px;">
+                            <h4 style="margin-top:0;color:#4cd964;">✅ Core Navigation (Enabled by Default)</h4>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableSubsFeed" type="checkbox" is="emby-checkbox" />
+                                    <span>📺 Subscriptions (Feed) — Chronological feed of latest uploads from subscribed channels</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableSubChannels" type="checkbox" is="emby-checkbox" />
+                                    <span>👤 Subscribed Channels (A–Z) — Channel folders with channel avatars</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableHistory" type="checkbox" is="emby-checkbox" />
+                                    <span>▶️ History &amp; Resume — Resume playback and browse YouTube watch history</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableLiked" type="checkbox" is="emby-checkbox" />
+                                    <span>👍 Liked Videos — Playlist with your liked videos</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableWatchLater" type="checkbox" is="emby-checkbox" />
+                                    <span>⏱️ Watch Later — Personal YouTube Watch Later playlist</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnablePlaylists" type="checkbox" is="emby-checkbox" />
+                                    <span>📁 Playlists — Personal and saved YouTube playlists</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style="background:#18181b;border:1px solid #444;border-radius:8px;padding:16px;">
+                            <h4 style="margin-top:0;color:#ff9800;">⚙️ Additional Tabs (Disabled by Default to Prevent Clutter)</h4>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableRecommendations" type="checkbox" is="emby-checkbox" />
+                                    <span>🏠 Home &amp; Recommendations — Algorithmic recommendation feed</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableTrending" type="checkbox" is="emby-checkbox" />
+                                    <span>🔥 Trending — Regionally trending videos</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableGaming" type="checkbox" is="emby-checkbox" />
+                                    <span>🎮 Gaming — Gaming streams and highlight videos</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableMusicCat" type="checkbox" is="emby-checkbox" />
+                                    <span>🎵 Music Category — Music videos and YouTube Music channel folder</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableLive" type="checkbox" is="emby-checkbox" />
+                                    <span>🔴 Live Streams — Active live broadcasts</span>
+                                </label>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableTrailersCat" type="checkbox" is="emby-checkbox" />
+                                    <span>🎬 Movie &amp; TV Trailers — Display current trailers in channel</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -223,12 +337,32 @@
                     Dashboard.showLoadingMsg();
                     loadUsersList();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        document.getElementById("txtYtDlpPath").value = config.YtDlpPath || "/config/bin/yt-dlp";
+                        document.getElementById("chkAutoDetectYtDlp").checked = config.AutoDetectYtDlp !== false;
+                        document.getElementById("chkEnablePrefetch").checked = config.EnableSpeculativePrefetch !== false;
+                        document.getElementById("txtCacheTtl").value = String(config.StreamCacheTtlHours || 6);
+
+                        document.getElementById("chkEnableSubsFeed").checked = config.EnableSubscriptionsFeedTab !== false;
+                        document.getElementById("chkEnableSubChannels").checked = config.EnableSubscribedChannelsTab !== false;
+                        document.getElementById("chkEnableHistory").checked = config.EnableHistoryTab !== false;
+                        document.getElementById("chkEnableLiked").checked = config.EnableLikedVideosTab !== false;
+                        document.getElementById("chkEnableWatchLater").checked = config.EnableWatchLaterTab !== false;
+                        document.getElementById("chkEnablePlaylists").checked = config.EnablePlaylistsTab !== false;
+
+                        document.getElementById("chkEnableRecommendations").checked = !!config.EnableRecommendationsTab;
+                        document.getElementById("chkEnableTrending").checked = !!config.EnableTrendingTab;
+                        document.getElementById("chkEnableGaming").checked = !!config.EnableGamingTab;
+                        document.getElementById("chkEnableMusicCat").checked = !!config.EnableMusicCategoryTab;
+                        document.getElementById("chkEnableLive").checked = !!config.EnableLiveTab;
+                        document.getElementById("chkEnableTrailersCat").checked = !!config.EnableTrailersCategoryTab;
+
                         document.getElementById("chkEnableStreamingChannel").checked = config.EnableStreamingChannel !== false;
                         document.getElementById("chkEnablePublicFallback").checked = config.EnablePublicFallbackForUnlinkedUsers !== false;
                         document.getElementById("chkEnableSponsorBlock").checked = config.EnableSponsorBlock !== false;
                         document.getElementById("txtSponsorBlockCategories").value = config.SponsorBlockCategories || "sponsor,selfpromo,interaction,intro,outro";
                         document.getElementById("chkEnableRyd").checked = config.EnableReturnYouTubeDislike !== false;
                         document.getElementById("chkEnableFavLike").checked = config.EnableFavoriteToLikeSync !== false;
+                        document.getElementById("chkHideFromContinueWatching").checked = config.HideFromContinueWatching !== false;
                         document.getElementById("selectMaxRes").value = String(config.PreferredMaxResolution || 2160);
                         document.getElementById("txtProxyUrl").value = config.ProxyUrl || "";
                         document.getElementById("txtStrmPath").value = config.StrmLibraryPath || "/data/youtube";
@@ -243,9 +377,9 @@
                         document.getElementById("txtPrimaryUser").value = config.PrimaryJellyfinUser || "";
                         document.getElementById("chkEnableTrailers").checked = config.EnableTrailerSupport !== false;
                         document.getElementById("chkEnableAutoTrailerSync").checked = config.EnableAutoTrailerStrmSync !== false;
-                        document.getElementById("txtTrailerLang").value = config.TrailerLanguage || "de-DE";
-                        document.getElementById("txtPreferredLang").value = config.PreferredLanguage || "de-DE";
-                        document.getElementById("txtPreferredRegion").value = config.PreferredRegion || "DE";
+                        document.getElementById("txtTrailerLang").value = config.TrailerLanguage || "en-US";
+                        document.getElementById("txtPreferredLang").value = config.PreferredLanguage || "en-US";
+                        document.getElementById("txtPreferredRegion").value = config.PreferredRegion || "US";
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -283,12 +417,32 @@
                     e.preventDefault();
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.YtDlpPath = document.getElementById("txtYtDlpPath").value.trim() || "/config/bin/yt-dlp";
+                        config.AutoDetectYtDlp = document.getElementById("chkAutoDetectYtDlp").checked;
+                        config.EnableSpeculativePrefetch = document.getElementById("chkEnablePrefetch").checked;
+                        config.StreamCacheTtlHours = parseInt(document.getElementById("txtCacheTtl").value, 10) || 6;
+
+                        config.EnableSubscriptionsFeedTab = document.getElementById("chkEnableSubsFeed").checked;
+                        config.EnableSubscribedChannelsTab = document.getElementById("chkEnableSubChannels").checked;
+                        config.EnableHistoryTab = document.getElementById("chkEnableHistory").checked;
+                        config.EnableLikedVideosTab = document.getElementById("chkEnableLiked").checked;
+                        config.EnableWatchLaterTab = document.getElementById("chkEnableWatchLater").checked;
+                        config.EnablePlaylistsTab = document.getElementById("chkEnablePlaylists").checked;
+
+                        config.EnableRecommendationsTab = document.getElementById("chkEnableRecommendations").checked;
+                        config.EnableTrendingTab = document.getElementById("chkEnableTrending").checked;
+                        config.EnableGamingTab = document.getElementById("chkEnableGaming").checked;
+                        config.EnableMusicCategoryTab = document.getElementById("chkEnableMusicCat").checked;
+                        config.EnableLiveTab = document.getElementById("chkEnableLive").checked;
+                        config.EnableTrailersCategoryTab = document.getElementById("chkEnableTrailersCat").checked;
+
                         config.EnableStreamingChannel = document.getElementById("chkEnableStreamingChannel").checked;
                         config.EnablePublicFallbackForUnlinkedUsers = document.getElementById("chkEnablePublicFallback").checked;
                         config.EnableSponsorBlock = document.getElementById("chkEnableSponsorBlock").checked;
                         config.SponsorBlockCategories = document.getElementById("txtSponsorBlockCategories").value.trim();
                         config.EnableReturnYouTubeDislike = document.getElementById("chkEnableRyd").checked;
                         config.EnableFavoriteToLikeSync = document.getElementById("chkEnableFavLike").checked;
+                        config.HideFromContinueWatching = document.getElementById("chkHideFromContinueWatching").checked;
                         config.PreferredMaxResolution = parseInt(document.getElementById("selectMaxRes").value, 10) || 2160;
                         config.ProxyUrl = document.getElementById("txtProxyUrl").value.trim();
                         config.StrmLibraryPath = document.getElementById("txtStrmPath").value.trim();
@@ -304,9 +458,9 @@
                         config.PrimaryJellyfinUser = document.getElementById("txtPrimaryUser").value.trim();
                         config.EnableTrailerSupport = document.getElementById("chkEnableTrailers").checked;
                         config.EnableAutoTrailerStrmSync = document.getElementById("chkEnableAutoTrailerSync").checked;
-                        config.TrailerLanguage = document.getElementById("txtTrailerLang").value.trim() || "de-DE";
-                        config.PreferredLanguage = document.getElementById("txtPreferredLang").value.trim() || "de-DE";
-                        config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "DE";
+                        config.TrailerLanguage = document.getElementById("txtTrailerLang").value.trim() || "en-US";
+                        config.PreferredLanguage = document.getElementById("txtPreferredLang").value.trim() || "en-US";
+                        config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "US";
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

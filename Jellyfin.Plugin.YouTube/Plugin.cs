@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.YouTube.Configuration;
+using Jellyfin.Plugin.YouTube.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
@@ -22,6 +23,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override string Description =>
         "SmartTube 1:1 Parity YouTube Integration for Jellyfin: Multi-User TV OAuth Login, Personal Home/Subscriptions/History/WatchLater Feeds, 4K Ad-Free Direct Streaming, SponsorBlock Auto-Skip, ReturnYouTubeDislike & Favorite-to-Like Sync.";
+
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        base.UpdateConfiguration(configuration);
+        if (configuration is PluginConfiguration { HideFromContinueWatching: true })
+        {
+            Task.Run(() => YouTubeStartupService.Instance?.SweepResumeItemsIfEnabled());
+        }
+    }
 
     public IEnumerable<PluginPageInfo> GetPages()
     {

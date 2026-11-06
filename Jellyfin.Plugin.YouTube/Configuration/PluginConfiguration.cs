@@ -10,20 +10,21 @@ public class PluginConfiguration : BasePluginConfiguration
         EnablePublicFallbackForUnlinkedUsers = true;
         PrimaryJellyfinUser = string.Empty;
         PrimaryJellyfinUserId = string.Empty;
-        PreferredLanguage = "de-DE";
-        PreferredRegion = "DE";
+        PreferredLanguage = "en-US";
+        PreferredRegion = "US";
         PreferredMaxResolution = 2160;
         EnableSponsorBlock = true;
         SponsorBlockCategories = "sponsor,selfpromo,interaction,intro,outro";
         EnableReturnYouTubeDislike = true;
         EnablePlayheadSync = true;
         EnableFavoriteToLikeSync = true;
+        HideFromContinueWatching = true;
         EnableYouTubeLibrary = true;
         EnableStrmSync = true;
         EnableMovieSupport = true;
         EnableTrailerSupport = true;
         EnableAutoTrailerStrmSync = true;
-        TrailerLanguage = "de-DE";
+        TrailerLanguage = "en-US";
         EnableYouTubeMusic = true;
         EnableYouTubeMusicChannel = true;
         EnableYouTubeMusicLibrary = true;
@@ -35,9 +36,25 @@ public class PluginConfiguration : BasePluginConfiguration
         FetchThumbnails = true;
         StrmLibraryPath = "/data/youtube";
         ProxyUrl = string.Empty;
-        YtDlpPath = "/usr/local/bin/yt-dlp";
-        OAuthClientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
-        OAuthClientSecret = "SboVhoG9s0rNafixCSGGKXAT";
+        YtDlpPath = "/config/bin/yt-dlp";
+        AutoDetectYtDlp = true;
+        EnableSpeculativePrefetch = true;
+        StreamCacheTtlHours = 6;
+        EnableSubscriptionsFeedTab = true;
+        EnableSubscribedChannelsTab = true;
+        EnableHistoryTab = true;
+        EnableLikedVideosTab = true;
+        EnablePlaylistsTab = true;
+        EnableWatchLaterTab = true;
+        EnableRecommendationsTab = false; // Anti-clutter default: off
+        EnableTrendingTab = false;        // Anti-clutter default: off
+        EnableGamingTab = false;          // Anti-clutter default: off
+        EnableMusicCategoryTab = false;   // Anti-clutter default: off
+        EnableLiveTab = false;            // Anti-clutter default: off
+        EnableTrailersCategoryTab = false;// Anti-clutter default: off
+        EnableSearchTab = true;
+        OAuthClientId = string.Empty;
+        OAuthClientSecret = string.Empty;
         PersistedRefreshToken = string.Empty;
         PersistedAccessToken = string.Empty;
         PersistedTokenExpiresAtUnix = 0;
@@ -57,6 +74,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableReturnYouTubeDislike { get; set; }
     public bool EnablePlayheadSync { get; set; }
     public bool EnableFavoriteToLikeSync { get; set; }
+    public bool HideFromContinueWatching { get; set; }
     public bool EnableYouTubeLibrary { get; set; }
     public bool EnableStrmSync { get; set; }
     public bool EnableMovieSupport { get; set; }
@@ -75,6 +93,22 @@ public class PluginConfiguration : BasePluginConfiguration
     public string StrmLibraryPath { get; set; }
     public string ProxyUrl { get; set; }
     public string YtDlpPath { get; set; }
+    public bool AutoDetectYtDlp { get; set; }
+    public bool EnableSpeculativePrefetch { get; set; }
+    public int StreamCacheTtlHours { get; set; }
+    public bool EnableSubscriptionsFeedTab { get; set; }
+    public bool EnableSubscribedChannelsTab { get; set; }
+    public bool EnableHistoryTab { get; set; }
+    public bool EnableLikedVideosTab { get; set; }
+    public bool EnablePlaylistsTab { get; set; }
+    public bool EnableWatchLaterTab { get; set; }
+    public bool EnableRecommendationsTab { get; set; }
+    public bool EnableTrendingTab { get; set; }
+    public bool EnableGamingTab { get; set; }
+    public bool EnableMusicCategoryTab { get; set; }
+    public bool EnableLiveTab { get; set; }
+    public bool EnableTrailersCategoryTab { get; set; }
+    public bool EnableSearchTab { get; set; }
     public string OAuthClientId { get; set; }
     public string OAuthClientSecret { get; set; }
     public string PersistedRefreshToken { get; set; }

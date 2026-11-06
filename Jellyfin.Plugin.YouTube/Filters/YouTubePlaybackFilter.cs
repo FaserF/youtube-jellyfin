@@ -2,6 +2,8 @@ using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -89,6 +91,22 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
     public async Task OnResultExecutionAsync(ResultExecutingContext context, ResultExecutionDelegate next)
     {
         var path = context.HttpContext.Request.Path.Value ?? string.Empty;
+        var config = Plugin.Instance?.Configuration;
+
+        if (config?.HideFromContinueWatching == true &&
+            path.Contains("/Resume", StringComparison.OrdinalIgnoreCase) &&
+            context.Result is ObjectResult objResult &&
+            objResult.Value is QueryResult<BaseItemDto> resumeResult &&
+            resumeResult.Items != null)
+        {
+            var filtered = resumeResult.Items.Where(item => !YouTubeIdKeys.IsYouTubeDto(item)).ToList();
+            if (filtered.Count != resumeResult.Items.Count)
+            {
+                resumeResult.Items = filtered;
+                resumeResult.TotalRecordCount = filtered.Count;
+            }
+        }
+
         if (path.EndsWith("/PlaybackInfo", StringComparison.OrdinalIgnoreCase) &&
             context.Result is ObjectResult { Value: MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbResp } &&
             pbResp.MediaSources is { Count: > 0 })

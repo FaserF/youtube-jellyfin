@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers;
@@ -24,17 +26,22 @@ public class YouTubeStartupService : IHostedService
     private readonly ISessionManager _sessionManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly IUserManager _userManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<YouTubeStartupService> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
     private static readonly ConcurrentDictionary<string, DateTime> _recentSkips = new();
+    private static readonly ConcurrentDictionary<(Guid UserId, Guid ItemId), bool> _clearingUserData = new();
+
+    public static YouTubeStartupService? Instance { get; private set; }
 
     public YouTubeStartupService(
         IServerApplicationPaths appPaths,
         ISessionManager sessionManager,
         ILibraryManager libraryManager,
         IUserDataManager userDataManager,
+        IUserManager userManager,
         IHttpClientFactory httpClientFactory,
         ILogger<YouTubeStartupService> logger,
         ILoggerFactory loggerFactory)
@@ -43,25 +50,46 @@ public class YouTubeStartupService : IHostedService
         _sessionManager = sessionManager;
         _libraryManager = libraryManager;
         _userDataManager = userDataManager;
+        _userManager = userManager;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _loggerFactory = loggerFactory;
+        Instance = this;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var ytDlpPath = YouTubeApiClient.ResolveYtDlpBinary(config);
+        if (File.Exists(ytDlpPath))
+        {
+            _logger.LogInformation("YouTube Plugin: Found yt-dlp binary at '{Path}'", ytDlpPath);
+        }
+        else
+        {
+            _logger.LogWarning("YouTube Plugin: yt-dlp binary not found at '{Path}'. YouTube playback may fail until installed in /config/bin/yt-dlp", ytDlpPath);
+        }
+
         TryBootstrapSeedAccount();
         TryInjectIndexHtmlScript();
         await EnsureYouTubeLibraryAsync().ConfigureAwait(false);
         await EnsureYouTubeMusicLibraryAsync().ConfigureAwait(false);
 
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
+        _sessionManager.PlaybackStopped += OnPlaybackStopped;
         _userDataManager.UserDataSaved += OnUserDataSaved;
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000).ConfigureAwait(false);
+            SweepResumeItemsIfEnabled();
+        });
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+        _sessionManager.PlaybackStopped -= OnPlaybackStopped;
         _userDataManager.UserDataSaved -= OnUserDataSaved;
         return Task.CompletedTask;
     }
@@ -310,43 +338,21 @@ public class YouTubeStartupService : IHostedService
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(targetDir))
-            {
-                return;
-            }
-
+            if (string.IsNullOrWhiteSpace(targetDir)) return;
             Directory.CreateDirectory(targetDir);
             var assembly = typeof(YouTubeStartupService).Assembly;
             var prefix = isMusic ? "music_" : "youtube_";
-
-            var imagePairs = new (string ResName, string FileName)[]
+            var images = new[] { ($"{prefix}poster.png", "poster.png"), ($"{prefix}poster.png", "folder.png"), ($"{prefix}backdrop.png", "backdrop.png"), ($"{prefix}backdrop.png", "fanart.png"), ($"{prefix}banner.png", "banner.png"), ($"{prefix}logo.png", "logo.png") };
+            foreach (var (res, file) in images)
             {
-                ($"{prefix}poster.png", "poster.png"),
-                ($"{prefix}poster.png", "folder.png"),
-                ($"{prefix}backdrop.png", "backdrop.png"),
-                ($"{prefix}backdrop.png", "fanart.png"),
-                ($"{prefix}banner.png", "banner.png"),
-                ($"{prefix}logo.png", "logo.png")
-            };
-
-            foreach (var (resName, fileName) in imagePairs)
-            {
-                var dst = Path.Combine(targetDir, fileName);
-                var fullRes = assembly.GetManifestResourceNames()
-                    .FirstOrDefault(n => n.EndsWith(resName, StringComparison.OrdinalIgnoreCase));
-                if (fullRes == null)
-                {
-                    continue;
-                }
-
+                var dst = Path.Combine(targetDir, file);
+                var fullRes = assembly.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(res, StringComparison.OrdinalIgnoreCase));
+                if (fullRes == null) continue;
                 using var stream = assembly.GetManifestResourceStream(fullRes);
-                if (stream != null)
+                if (stream != null && (!File.Exists(dst) || new FileInfo(dst).Length != stream.Length))
                 {
-                    if (!File.Exists(dst) || new FileInfo(dst).Length != stream.Length)
-                    {
-                        using var fs = File.Create(dst);
-                        stream.CopyTo(fs);
-                    }
+                    using var fs = File.Create(dst);
+                    stream.CopyTo(fs);
                 }
             }
         }
@@ -431,6 +437,32 @@ public class YouTubeStartupService : IHostedService
         try
         {
             var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+            if (config.HideFromContinueWatching && e.Item != null && e.UserData != null && e.UserData.PlaybackPositionTicks > 0)
+            {
+                if (YouTubeIdKeys.IsYouTubeItem(e.Item, e.Item.Path))
+                {
+                    var key = (e.UserId, e.Item.Id);
+                    if (_clearingUserData.TryAdd(key, true))
+                    {
+                        try
+                        {
+                            e.UserData.PlaybackPositionTicks = 0;
+                            var saveUser = _userManager.GetUserById(e.UserId);
+                            if (saveUser != null)
+                            {
+                                _userDataManager.SaveUserData(saveUser, e.Item, e.UserData, UserDataSaveReason.PlaybackFinished, CancellationToken.None);
+                            }
+
+                            _logger.LogDebug("Auto-reset resume position to 0 for YouTube item '{ItemName}'", e.Item.Name);
+                        }
+                        finally
+                        {
+                            _clearingUserData.TryRemove(key, out _);
+                        }
+                    }
+                }
+            }
+
             if (!config.EnableFavoriteToLikeSync || e.Item == null || e.UserData == null)
             {
                 return;
@@ -463,5 +495,87 @@ public class YouTubeStartupService : IHostedService
         {
             _logger.LogDebug(ex, "Error syncing Jellyfin favorite to YouTube like");
         }
+    }
+
+    private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
+    {
+        try
+        {
+            var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+            if (config.HideFromContinueWatching && e.Item != null && YouTubeIdKeys.IsYouTubeItem(e.Item, e.Item.Path))
+            {
+                var userId = e.Session?.UserId;
+                if (userId.HasValue && !userId.Value.Equals(Guid.Empty))
+                {
+                    var stopUser = _userManager.GetUserById(userId.Value);
+                    if (stopUser != null && ResetItemResume(stopUser, e.Item))
+                    {
+                        _logger.LogInformation("Cleared resume position on stop for YouTube item '{Item}'", e.Item.Name);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error clearing YouTube playback position on stop");
+        }
+    }
+
+    public void SweepResumeItemsIfEnabled()
+    {
+        try
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config?.HideFromContinueWatching != true)
+            {
+                return;
+            }
+
+            var items = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Episode, BaseItemKind.Movie, BaseItemKind.Audio, BaseItemKind.Trailer },
+                Recursive = true
+            });
+
+            var users = _userManager.GetUsers().ToList();
+            var cleared = 0;
+            foreach (var item in items)
+            {
+                if (!YouTubeIdKeys.IsYouTubeItem(item, item.Path))
+                {
+                    continue;
+                }
+
+                foreach (var user in users)
+                {
+                    if (ResetItemResume(user, item))
+                    {
+                        cleared++;
+                    }
+                }
+            }
+
+            if (cleared > 0)
+            {
+                _logger.LogInformation("Swept and cleared {Count} YouTube resume entries from Continue Watching", cleared);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error sweeping YouTube resume items");
+        }
+    }
+
+    private bool ResetItemResume(User user, BaseItem item)
+    {
+        var data = _userDataManager.GetUserData(user, item);
+        if (data != null && data.PlaybackPositionTicks > 0)
+        {
+            data.PlaybackPositionTicks = 0;
+            _userDataManager.SaveUserData(user, item, data, UserDataSaveReason.PlaybackFinished, CancellationToken.None);
+            return true;
+        }
+
+        return false;
     }
 }

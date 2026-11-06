@@ -298,9 +298,31 @@ All settings can be configured in the Jellyfin Dashboard under **Dashboard → P
 
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
-| **`ProxyUrl`** | `string` | `"socks5://easyproxy-sports:1080"` | Optional HTTP/SOCKS5 proxy URL (`socks5://host:port` or `http://host:port`) used by `YouTubeApiClient`, `yt-dlp`, and the HLS/M4A stream proxy to bypass datacenter IP blocks or age/geo-restrictions. Leave empty (`""`) for direct connections. |
-| **`YtDlpPath`** | `string` | `"/usr/local/bin/yt-dlp"` | Absolute path to the `yt-dlp` executable inside the Jellyfin host/container. `YouTubeStartupService` automatically downloads and installs the latest Linux/ARM64/x64 `yt-dlp` binary if missing. |
-| **`CookiesText`** | `string` | `""` | Optional Netscape-format `cookies.txt` content passed to `yt-dlp` (`--cookies`) for age-restricted videos when OAuth tokens alone are not sufficient. |
+| **`YtDlpPath`** | `string` | `"/config/bin/yt-dlp"` | Absolute path to the `yt-dlp` executable inside the Jellyfin host/container. |
+| **`AutoDetectYtDlp`** | `bool` | `true` | Automatically checks `/config/bin/yt-dlp`, `/usr/local/bin/yt-dlp`, `/usr/bin/yt-dlp`, and PATH for `yt-dlp`. |
+| **`EnableSpeculativePrefetch`** | `bool` | `true` | Asynchronously pre-resolves stream manifests for the top 3 videos when opening a feed/folder to deliver instant `<1.5s` playback. |
+| **`StreamCacheTtlHours`** | `int` | `6` | In-memory lifetime (hours) for resolved YouTube stream URLs and HLS manifests to avoid repeated extraction. |
+| **`ProxyUrl`** | `string` | `""` | Optional HTTP/SOCKS5 proxy URL (`socks5://host:port` or `http://host:port`) used by `YouTubeApiClient`, `yt-dlp`, and the HLS/M4A stream proxy. |
+| **`CookiesText`** | `string` | `""` | Optional Netscape-format `cookies.txt` content passed to `yt-dlp` (`--cookies`) for age-restricted videos. |
+
+---
+
+### SmartTube Navigation & Channel-Kategorien (Anti-Clutter Filter)
+
+| Option Property | Type | Default Value | Detailed Description |
+| :--- | :---: | :---: | :--- |
+| **`EnableSubscriptionsFeedTab`** | `bool` | `true` | 📺 **Meine Abonnements (Feed)**: Chronological stream of latest uploads from all subscribed channels. |
+| **`EnableSubscribedChannelsTab`** | `bool` | `true` | 👤 **Abonnierte Kanäle (A–Z)**: Directory of all subscribed channels with avatar icons. |
+| **`EnableHistoryTab`** | `bool` | `true` | ▶️ **Zuletzt gesehen & Verlauf**: Recently watched videos with progress state. |
+| **`EnableLikedVideosTab`** | `bool` | `true` | 👍 **Mag ich (Liked Videos)**: User's liked YouTube videos. |
+| **`EnableWatchLaterTab`** | `bool` | `true` | ⏱️ **Später ansehen**: User's Watch Later playlist. |
+| **`EnablePlaylistsTab`** | `bool` | `true` | 📁 **Meine Playlists**: User's personal and saved playlists. |
+| **`EnableRecommendationsTab`** | `bool` | `false` | 🏠 **Empfehlungen & Startseite**: Algorithmic recommendations. *(Disabled by default to keep library clean).* |
+| **`EnableTrendingTab`** | `bool` | `false` | 🔥 **Trends & Beliebt**: Trending videos in user region. *(Disabled by default to keep library clean).* |
+| **`EnableGamingTab`** | `bool` | `false` | 🎮 **Gaming**: Popular gaming videos and streams. *(Disabled by default).* |
+| **`EnableMusicCategoryTab`** | `bool` | `false` | 🎵 **Musik-Kategorie**: Music video charts. *(Disabled by default).* |
+| **`EnableLiveTab`** | `bool` | `false` | 🔴 **Live Streams**: Active live broadcasts. *(Disabled by default).* |
+| **`EnableTrailersCategoryTab`** | `bool` | `false` | 🎬 **Kino-Trailer**: Movie trailer feed inside the channel. *(Disabled by default).* |
 
 ---
 
@@ -416,9 +438,30 @@ All endpoints are hosted by `YouTubePluginController` under `/api/youtubePlugin`
 
 ## 🛠️ Installation, Deployment & Building from Source
 
-### Prerequisites
-- **Jellyfin Server:** `10.11.0` or newer (`.NET 9.0` runtime)
-- **`yt-dlp`:** Automatically downloaded to `/usr/local/bin/yt-dlp` on startup if not already installed (`python3` must be present in the container/host).
+### Prerequisites & `yt-dlp` Setup (Essential for Fast Playback)
+- **Jellyfin Server:** `10.11.0` or newer (`.NET 9.0` runtime).
+- **`yt-dlp` Binary:** YouTube streams require `yt-dlp` to resolve formats and manifests. If `yt-dlp` is missing, videos will fail to resolve and Jellyfin will hang in infinite probing loops.
+
+#### Installing `yt-dlp` in Docker Containers (Recommended: `/config/bin/yt-dlp`)
+Because container file systems are often read-only or reset on container updates, place the standalone executable into your persistent Jellyfin config directory:
+
+```bash
+# 1. Create bin directory inside your Jellyfin config bind mount:
+mkdir -p /opt/docker/data/media-config/jellyfin/bin
+
+# 2. Download the standalone static binary:
+# For ARM64 (e.g. Oracle Cloud Ampere A1):
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64 -o /opt/docker/data/media-config/jellyfin/bin/yt-dlp
+
+# OR For x86_64 (Intel/AMD):
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /opt/docker/data/media-config/jellyfin/bin/yt-dlp
+
+# 3. Make executable and grant permissions:
+chmod +x /opt/docker/data/media-config/jellyfin/bin/yt-dlp
+chown -R 1000:1000 /opt/docker/data/media-config/jellyfin/bin
+```
+
+When `AutoDetectYtDlp = true` (default), the plugin automatically checks `/config/bin/yt-dlp`, `/usr/local/bin/yt-dlp`, `/usr/bin/yt-dlp`, and `PATH` without requiring manual path configuration.
 
 ### Build from Source
 

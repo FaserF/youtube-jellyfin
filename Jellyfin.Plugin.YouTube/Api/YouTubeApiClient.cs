@@ -11,9 +11,31 @@ namespace Jellyfin.Plugin.YouTube.Api;
 
 public partial class YouTubeApiClient : IDisposable
 {
-    public const string DefaultTvClientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
-    public const string DefaultTvClientSecret = "SboVhoG9s0rNafixCSGGKXAT";
+    public const string DefaultTvClientId = "";
+    public const string DefaultTvClientSecret = "";
     private const string TvUserAgent = "Mozilla/5.0 (Linux; Tizen 5.0; SAMSUNG SM-T830) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.31 TV Safari/537.36";
+
+    public static string GetEffectiveClientId(PluginConfiguration? config)
+    {
+        if (!string.IsNullOrWhiteSpace(config?.OAuthClientId))
+        {
+            return config.OAuthClientId;
+        }
+
+        var env = Environment.GetEnvironmentVariable("YOUTUBE_OAUTH_CLIENT_ID");
+        return !string.IsNullOrWhiteSpace(env) ? env : DefaultTvClientId;
+    }
+
+    public static string GetEffectiveClientSecret(PluginConfiguration? config)
+    {
+        if (!string.IsNullOrWhiteSpace(config?.OAuthClientSecret))
+        {
+            return config.OAuthClientSecret;
+        }
+
+        var env = Environment.GetEnvironmentVariable("YOUTUBE_OAUTH_CLIENT_SECRET");
+        return !string.IsNullOrWhiteSpace(env) ? env : DefaultTvClientSecret;
+    }
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
@@ -77,9 +99,17 @@ public partial class YouTubeApiClient : IDisposable
 
     public async Task<YouTubeDeviceCodeResponse?> RequestDeviceCodeAsync(CancellationToken cancellationToken = default)
     {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var clientId = GetEffectiveClientId(config);
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            _logger.LogWarning("Cannot request YouTube device code: OAuthClientId is not configured.");
+            return null;
+        }
+
         var payload = JsonSerializer.Serialize(new
         {
-            client_id = DefaultTvClientId,
+            client_id = clientId,
             scope = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content",
             device_id = Guid.NewGuid().ToString(),
             device_model = "YtLr::Shell"
@@ -106,10 +136,18 @@ public partial class YouTubeApiClient : IDisposable
         string? jellyfinUserId = null,
         CancellationToken cancellationToken = default)
     {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var clientId = GetEffectiveClientId(config);
+        var clientSecret = GetEffectiveClientSecret(config);
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+        {
+            return (false, "OAuth Client ID / Secret not configured", null);
+        }
+
         var form = new Dictionary<string, string>
         {
-            ["client_id"] = DefaultTvClientId,
-            ["client_secret"] = DefaultTvClientSecret,
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
             ["code"] = deviceCode,
             ["grant_type"] = "http://oauth.net/grant_type/device/1.0"
         };
@@ -142,7 +180,6 @@ public partial class YouTubeApiClient : IDisposable
 
         var accountName = await FetchAccountNameAsync(accessToken, cancellationToken).ConfigureAwait(false) ?? jellyfinUser;
 
-        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         config.UserAccounts ??= new List<YouTubeUserAccountEntry>();
         var existing = config.UserAccounts.FirstOrDefault(u =>
             string.Equals(PluginConfiguration.NormalizeId(u.JellyfinUser), PluginConfiguration.NormalizeId(jellyfinUser), StringComparison.OrdinalIgnoreCase) ||
@@ -159,8 +196,8 @@ public partial class YouTubeApiClient : IDisposable
         }
 
         existing.AccountName = accountName;
-        existing.ClientId = DefaultTvClientId;
-        existing.ClientSecret = DefaultTvClientSecret;
+        existing.ClientId = clientId;
+        existing.ClientSecret = clientSecret;
         existing.RefreshToken = refreshToken;
         existing.AccessToken = accessToken;
         existing.TokenExpiresAtUnix = expiresUnix;
@@ -203,10 +240,10 @@ public partial class YouTubeApiClient : IDisposable
 
             var clientId = !string.IsNullOrWhiteSpace(account.ClientId)
                 ? account.ClientId
-                : (!string.IsNullOrWhiteSpace(config.OAuthClientId) ? config.OAuthClientId : DefaultTvClientId);
+                : GetEffectiveClientId(config);
             var clientSecret = !string.IsNullOrWhiteSpace(account.ClientSecret)
                 ? account.ClientSecret
-                : (!string.IsNullOrWhiteSpace(config.OAuthClientSecret) ? config.OAuthClientSecret : DefaultTvClientSecret);
+                : GetEffectiveClientSecret(config);
 
             var form = new Dictionary<string, string>
             {

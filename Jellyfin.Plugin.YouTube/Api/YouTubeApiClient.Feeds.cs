@@ -120,10 +120,10 @@ public partial class YouTubeApiClient
         {
             var query = browseId switch
             {
-                "FEgaming" => "Gaming Deutsch 2026",
-                "FEmusic" => "Musik Charts Official Video",
-                "FElive" => "Live News Stream Deutsch",
-                _ => "Trending Deutsch Technologie Finanzfluss"
+                "FEgaming" => "Gaming 2026",
+                "FEmusic" => "Music Charts Official Video",
+                "FElive" => "Live News Stream",
+                _ => "Trending Technology News"
             };
             results = await SearchVideosAsync(query, null, maxResults, cancellationToken).ConfigureAwait(false);
         }

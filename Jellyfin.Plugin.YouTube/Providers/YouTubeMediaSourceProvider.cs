@@ -73,15 +73,16 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
 
         var isAudioItem = item is Audio || (item.Path != null && item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase));
         var cacheKey = isAudioItem ? $"audio_{videoId}" : $"video_{videoId}";
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var effectiveTtl = TimeSpan.FromHours(config.StreamCacheTtlHours > 0 ? config.StreamCacheTtlHours : 6);
 
-        if (_sourceCache.TryGetValue(cacheKey, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheTtl)
+        if (_sourceCache.TryGetValue(cacheKey, out var cached) && DateTime.UtcNow - cached.CachedAt < effectiveTtl)
         {
             return new[] { cached.Source };
         }
 
         try
         {
-            var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
             const string internalBaseUrl = "http://127.0.0.1:8096";
 
             using var client = new YouTubeApiClient(

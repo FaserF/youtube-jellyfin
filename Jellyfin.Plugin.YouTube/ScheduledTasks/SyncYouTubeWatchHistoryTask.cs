@@ -133,17 +133,29 @@ public class SyncYouTubeWatchHistoryTask : IScheduledTask
                     }
                     else if (ytItem.ResumePercent > 0 && ytItem.DurationSeconds > 0)
                     {
-                        var targetSeconds = ytItem.DurationSeconds * (ytItem.ResumePercent / 100.0);
-                        var targetTicks = TimeSpan.FromSeconds(targetSeconds).Ticks;
-                        if (Math.Abs(userData.PlaybackPositionTicks - targetTicks) > TimeSpan.FromSeconds(5).Ticks)
+                        if (config.HideFromContinueWatching)
                         {
-                            userData.Played = false;
-                            userData.PlaybackPositionTicks = targetTicks;
-                            userData.LastPlayedDate = DateTime.UtcNow;
-                            modified = true;
+                            if (userData.PlaybackPositionTicks > 0)
+                            {
+                                userData.PlaybackPositionTicks = 0;
+                                modified = true;
+                            }
+                        }
+                        else
+                        {
+                            var targetSeconds = ytItem.DurationSeconds * (ytItem.ResumePercent / 100.0);
+                            var targetTicks = TimeSpan.FromSeconds(targetSeconds).Ticks;
+                            if (Math.Abs(userData.PlaybackPositionTicks - targetTicks) > TimeSpan.FromSeconds(5).Ticks)
+                            {
+                                userData.Played = false;
+                                userData.PlaybackPositionTicks = targetTicks;
+                                userData.LastPlayedDate = DateTime.UtcNow;
+                                modified = true;
+                            }
                         }
                     }
-                    else if (candidate.Path != null &&
+                    else if (!config.HideFromContinueWatching &&
+                             candidate.Path != null &&
                              (candidate.Path.Contains("01 - Home", StringComparison.OrdinalIgnoreCase) ||
                               candidate.Path.Contains("03 - Weiteransehen", StringComparison.OrdinalIgnoreCase)) &&
                              !userData.Played && userData.PlaybackPositionTicks == 0)

@@ -80,52 +80,65 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         var isAuthenticated = account != null && !string.IsNullOrWhiteSpace(account.RefreshToken);
         var effectiveUserKey = isAuthenticated ? (account!.JellyfinUser ?? rawUserId) : null;
 
-        // Root Navigation (SmartTube Sidebar Parity)
+        // Root Navigation (SmartTube Sidebar Parity & Anti-Clutter Filtering)
         if (string.IsNullOrWhiteSpace(query.FolderId))
         {
             if (isAuthenticated)
             {
-                var personalCategories = new (string Id, string Title, string Overview)[]
+                var tabs = new (bool Enabled, string Id, string Title, string Overview)[]
                 {
-                    ("cat_home", "🏠 Home & Recommended", $"Personal YouTube recommendations for {account!.AccountName}"),
-                    ("cat_subscriptions", "📺 Subscriptions Feed", "Latest uploads from your subscribed YouTube channels"),
-                    ("cat_continue", "▶️ Continue Watching & History", "Resume partially watched videos and browse your YouTube history"),
-                    ("cat_channels", "👤 Subscribed Channels (A–Z)", "Browse all your subscribed channels and their uploads"),
-                    ("cat_watch_later", "⏱️ Watch Later", "Videos saved to your Watch Later playlist"),
-                    ("cat_liked", "👍 Liked Videos", "Videos you have liked on YouTube"),
-                    ("cat_trailers", "🎬 Kino- & Film-Trailer", "Current theatrical & streaming trailers in high definition (Anonymous)"),
-                    ("cat_playlists", "📁 My Playlists", "Your personal and saved YouTube playlists"),
-                    ("cat_ytmusic", "🎵 YouTube Music (Audio Streaming)", "Personal Supermix, Liked Songs, Listen Again & Music Charts in HQ Audio"),
-                    ("cat_trending", "🔥 Trending", "Currently trending videos in your region"),
-                    ("cat_gaming", "🎮 Gaming", "Top gaming streams and videos"),
-                    ("cat_music", "🎵 Music", "Music videos and charts"),
-                    ("cat_live", "🔴 Live Streams", "Currently active live broadcasts")
+                    (config.EnableSubscriptionsFeedTab, "cat_subscriptions", "📺 Subscriptions (Feed)", "Latest uploads from your subscribed YouTube channels"),
+                    (config.EnableSubscribedChannelsTab, "cat_channels", "👤 Subscribed Channels (A–Z)", "Browse all your subscribed channels and their uploads"),
+                    (config.EnableHistoryTab, "cat_continue", "▶️ History & Resume", "Resume partially watched videos and browse your YouTube history"),
+                    (config.EnableLikedVideosTab, "cat_liked", "👍 Liked Videos", "Videos you have liked on YouTube"),
+                    (config.EnableWatchLaterTab, "cat_watch_later", "⏱️ Watch Later", "Videos saved to your Watch Later playlist"),
+                    (config.EnablePlaylistsTab, "cat_playlists", "📁 Playlists", "Your personal and saved YouTube playlists"),
+                    (config.EnableRecommendationsTab, "cat_home", "🏠 Home & Recommendations", $"Personal YouTube recommendations for {account!.AccountName}"),
+                    (config.EnableTrendingTab, "cat_trending", "🔥 Trending", "Currently trending videos in your region"),
+                    (config.EnableTrailersCategoryTab, "cat_trailers", "🎬 Movie & TV Trailers", "Current theatrical & streaming trailers in high definition"),
+                    (config.EnableYouTubeMusic && config.EnableMusicCategoryTab, "cat_ytmusic", "🎵 YouTube Music (Audio Streaming)", "Personal Supermix, Liked Songs & Music Charts in HQ Audio"),
+                    (config.EnableGamingTab, "cat_gaming", "🎮 Gaming", "Top gaming streams and videos"),
+                    (config.EnableMusicCategoryTab, "cat_music", "🎵 Music", "Music videos and charts"),
+                    (config.EnableLiveTab, "cat_live", "🔴 Live Streams", "Currently active live broadcasts")
                 };
 
-                foreach (var (id, title, desc) in personalCategories)
+                foreach (var (en, id, title, desc) in tabs)
                 {
-                    items.Add(new ChannelItemInfo
+                    if (en)
                     {
-                        Id = id,
-                        Name = title,
-                        Overview = desc,
-                        Type = ChannelItemType.Folder
-                    });
+                        items.Add(new ChannelItemInfo
+                        {
+                            Id = id,
+                            Name = title,
+                            Overview = desc,
+                            Type = ChannelItemType.Folder
+                        });
+                    }
                 }
             }
             else
             {
-                var publicCategories = new (string Id, string Title, string Overview)[]
-                {
-                    ("cat_trending", "🔥 Trending (Public)", "Currently trending videos on YouTube (Unlinked Public Mode)"),
-                    ("cat_home", "🏠 Popular & Discover (Public)", "Popular technology, news, and entertainment videos"),
-                    ("cat_trailers", "🎬 Kino- & Film-Trailer", "Current theatrical and movie trailers in high definition"),
-                    ("cat_ytmusic", "🎵 YouTube Music (Public Audio)", "Top music charts, new releases, chill & workout audio tracks"),
-                    ("cat_gaming", "🎮 Gaming (Public)", "Popular gaming videos"),
-                    ("cat_music", "🎵 Music (Public)", "Popular music videos"),
-                    ("cat_live", "🔴 Live Streams (Public)", "Public live broadcasts"),
-                    ("cat_login_info", "🔑 Link Personal YouTube Account", "Open Jellyfin Dashboard -> Plugins -> YouTube to link your personal YouTube account via TV code")
-                };
+                var publicCategories = new List<(string Id, string Title, string Overview)>();
+
+                if (config.EnableTrendingTab)
+                    publicCategories.Add(("cat_trending", "🔥 Trending (Public)", "Currently trending videos on YouTube (Unlinked Public Mode)"));
+
+                if (config.EnableRecommendationsTab)
+                    publicCategories.Add(("cat_home", "🏠 Discover & Popular (Public)", "Popular technology, news, and entertainment videos"));
+
+                if (config.EnableTrailersCategoryTab)
+                    publicCategories.Add(("cat_trailers", "🎬 Movie & TV Trailers", "Current theatrical and movie trailers in high definition"));
+
+                if (config.EnableGamingTab)
+                    publicCategories.Add(("cat_gaming", "🎮 Gaming (Public)", "Popular gaming videos"));
+
+                if (config.EnableMusicCategoryTab)
+                    publicCategories.Add(("cat_music", "🎵 Music (Public)", "Popular music videos"));
+
+                if (config.EnableLiveTab)
+                    publicCategories.Add(("cat_live", "🔴 Live Streams (Public)", "Public live broadcasts"));
+
+                publicCategories.Add(("cat_login_info", "🔑 Link YouTube Account", "Open Jellyfin Dashboard -> Plugins -> YouTube to link your personal YouTube account via TV code"));
 
                 foreach (var (id, title, desc) in publicCategories)
                 {
@@ -199,10 +212,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         // Cinema & Movie Trailers Folder (Always Anonymous / Guest)
         if (query.FolderId == "cat_trailers")
         {
-            var lang = config.TrailerLanguage ?? config.PreferredLanguage ?? "de";
-            var queryText = lang.StartsWith("de", StringComparison.OrdinalIgnoreCase)
-                ? "Offizielle Kino Trailer Deutsch 2026"
-                : "Official Movie Trailers 2026";
+            const string queryText = "Official Movie Trailers 2026";
             var videos = await client.SearchVideosAsync(queryText, null, 30, cancellationToken).ConfigureAwait(false);
             var mapped = await EnrichAndMapVideosAsync(client, videos, cancellationToken).ConfigureAwait(false);
             return new ChannelItemResult { Items = mapped, TotalRecordCount = mapped.Count };
@@ -389,9 +399,12 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             list.Add(item);
         }
 
-        foreach (var top in videos.Take(2))
+        if (config.EnableSpeculativePrefetch)
         {
-            client.PrefetchStreamInBackground(top.VideoId);
+            foreach (var top in videos.Take(3))
+            {
+                client.PrefetchStreamInBackground(top.VideoId);
+            }
         }
 
         return list;
@@ -511,49 +524,26 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         }
 
         // Subtitles (Official & Auto-Generated Captions)
-        if (streamInfo.SubtitleTracks != null && streamInfo.SubtitleTracks.Count > 0)
-        {
-            var prefLang = Config.PreferredLanguage ?? "de";
-            foreach (var st in streamInfo.SubtitleTracks)
-            {
-                var subUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/subtitles/{Uri.EscapeDataString(st.Language)}.vtt";
-                var isDefaultSub = st.Language.StartsWith(prefLang, StringComparison.OrdinalIgnoreCase) && !st.IsAutoGenerated;
+        var subTracks = streamInfo.SubtitleTracks?.Select(st => (Lang: st.Language, Title: st.Title, IsDef: st.Language.StartsWith(Config.PreferredLanguage ?? "de", StringComparison.OrdinalIgnoreCase) && !st.IsAutoGenerated))
+            ?? streamInfo.Subtitles?.Select(kv => (Lang: kv.Key, Title: $"YouTube ({kv.Key})", IsDef: false))
+            ?? Enumerable.Empty<(string Lang, string Title, bool IsDef)>();
 
-                mediaStreams.Add(new MediaStream
-                {
-                    Type = MediaStreamType.Subtitle,
-                    Index = streamIdx++,
-                    Language = st.Language,
-                    Title = st.Title,
-                    Codec = "vtt",
-                    IsDefault = isDefaultSub,
-                    IsExternal = true,
-                    IsExternalUrl = false,
-                    DeliveryMethod = MediaBrowser.Model.Dlna.SubtitleDeliveryMethod.External,
-                    Path = subUrl,
-                    DeliveryUrl = subUrl
-                });
-            }
-        }
-        else if (streamInfo.Subtitles != null)
+        foreach (var st in subTracks)
         {
-            foreach (var kv in streamInfo.Subtitles)
+            var subUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/subtitles/{Uri.EscapeDataString(st.Lang)}.vtt";
+            mediaStreams.Add(new MediaStream
             {
-                var subUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/subtitles/{Uri.EscapeDataString(kv.Key)}.vtt";
-                mediaStreams.Add(new MediaStream
-                {
-                    Type = MediaStreamType.Subtitle,
-                    Index = streamIdx++,
-                    Language = kv.Key,
-                    Title = $"YouTube ({kv.Key})",
-                    Codec = "vtt",
-                    IsExternal = true,
-                    IsExternalUrl = false,
-                    DeliveryMethod = MediaBrowser.Model.Dlna.SubtitleDeliveryMethod.External,
-                    Path = subUrl,
-                    DeliveryUrl = subUrl
-                });
-            }
+                Type = MediaStreamType.Subtitle,
+                Index = streamIdx++,
+                Language = st.Lang,
+                Title = st.Title,
+                Codec = "vtt",
+                IsDefault = st.IsDef,
+                IsExternal = true,
+                DeliveryMethod = MediaBrowser.Model.Dlna.SubtitleDeliveryMethod.External,
+                Path = subUrl,
+                DeliveryUrl = subUrl
+            });
         }
 
         var directPlayUrl = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl)

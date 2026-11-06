@@ -248,6 +248,41 @@ public class YouTubePluginFullParityTests
         config.EnableTrailerSupport.Should().BeTrue();
         config.EnableAutoTrailerStrmSync.Should().BeTrue();
         config.TrailerLanguage.Should().Be("de-DE");
+        config.HideFromContinueWatching.Should().BeTrue();
+    }
+
+    [Fact]
+    public void YouTubeIdKeys_IsYouTubeItemAndDto_ShouldDetectYouTubeMedia()
+    {
+        var episode = new Episode
+        {
+            Path = "/data/youtube/Channel [YouTubeChannel-UC123]/Season 1/Ep [YouTubeVideo-dQw4w9WgXcQ].strm"
+        };
+        YouTubeIdKeys.IsYouTubeItem(episode, episode.Path).Should().BeTrue();
+
+        var trailer = new Movie
+        {
+            Path = "/media/movies/Inception (2010)/Inception (2010)-trailer.strm"
+        };
+        YouTubeIdKeys.IsYouTubeItem(trailer, trailer.Path).Should().BeTrue();
+
+        var normalMovie = new Movie
+        {
+            Path = "/media/movies/Avatar (2009)/Avatar (2009).mkv"
+        };
+        YouTubeIdKeys.IsYouTubeItem(normalMovie, normalMovie.Path).Should().BeFalse();
+
+        var dto = new MediaBrowser.Model.Dto.BaseItemDto
+        {
+            Path = "/data/youtube-music/Queen - Bohemian Rhapsody [YouTubeAudio-fJ9rUzIMcZQ].strm"
+        };
+        YouTubeIdKeys.IsYouTubeDto(dto).Should().BeTrue();
+
+        var normalDto = new MediaBrowser.Model.Dto.BaseItemDto
+        {
+            Path = "/media/music/Queen/A Night at the Opera/04 - Bohemian Rhapsody.flac"
+        };
+        YouTubeIdKeys.IsYouTubeDto(normalDto).Should().BeFalse();
     }
 
     [Fact]
