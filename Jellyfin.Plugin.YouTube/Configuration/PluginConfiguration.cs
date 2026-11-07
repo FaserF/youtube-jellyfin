@@ -186,7 +186,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public string GetPublicServerUrl(string? requestScheme = null, string? requestHost = null)
     {
-        if (!string.IsNullOrWhiteSpace(requestScheme) && !string.IsNullOrWhiteSpace(requestHost))
+        if (!string.IsNullOrWhiteSpace(requestScheme) && !string.IsNullOrWhiteSpace(requestHost) && !IsInternalOrLoopbackHost(requestHost))
         {
             return $"{requestScheme}://{requestHost}".TrimEnd('/');
         }
@@ -202,7 +202,32 @@ public class PluginConfiguration : BasePluginConfiguration
             return published.TrimEnd('/');
         }
 
+        if (!string.IsNullOrWhiteSpace(requestScheme) && !string.IsNullOrWhiteSpace(requestHost))
+        {
+            return $"{requestScheme}://{requestHost}".TrimEnd('/');
+        }
+
         return "https://jellyfin.fabiseitz.de";
+    }
+
+    public static bool IsInternalOrLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return true;
+        }
+
+        var hostname = host.Split(':')[0].Trim();
+        return hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+               hostname.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               hostname.Equals("::1", StringComparison.OrdinalIgnoreCase) ||
+               hostname.Equals("jellyfin", StringComparison.OrdinalIgnoreCase) ||
+               hostname.EndsWith(".internal", StringComparison.OrdinalIgnoreCase) ||
+               hostname.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+               hostname.EndsWith(".docker", StringComparison.OrdinalIgnoreCase) ||
+               hostname.StartsWith("172.", StringComparison.Ordinal) ||
+               hostname.StartsWith("10.", StringComparison.Ordinal) ||
+               hostname.StartsWith("192.168.", StringComparison.Ordinal);
     }
 }
 

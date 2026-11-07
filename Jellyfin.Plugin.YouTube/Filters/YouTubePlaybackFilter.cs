@@ -3,9 +3,11 @@ using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Jellyfin.Plugin.YouTube.Filters;
 
@@ -16,10 +18,12 @@ namespace Jellyfin.Plugin.YouTube.Filters;
 public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
 {
     private readonly ILibraryManager _libraryManager;
+    private readonly YouTubeMediaSourceProvider? _mediaSourceProvider;
 
-    public YouTubePlaybackFilter(ILibraryManager libraryManager)
+    public YouTubePlaybackFilter(ILibraryManager libraryManager, YouTubeMediaSourceProvider? mediaSourceProvider = null)
     {
         _libraryManager = libraryManager;
+        _mediaSourceProvider = mediaSourceProvider;
     }
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -37,12 +41,23 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                            path.EndsWith("/universal", StringComparison.OrdinalIgnoreCase) ||
                            path.EndsWith("/universal.mp3", StringComparison.OrdinalIgnoreCase) ||
                            path.EndsWith("/universal.m4a", StringComparison.OrdinalIgnoreCase));
+        var isPlaybackInfoPath = path.EndsWith("/PlaybackInfo", StringComparison.OrdinalIgnoreCase);
 
-        if (isVideoPath || isAudioPath)
+        if (isVideoPath || isAudioPath || isPlaybackInfoPath)
         {
-            if (context.ActionArguments.TryGetValue("itemId", out var rawId) && rawId is Guid id)
+            Guid? itemId = null;
+            if (context.ActionArguments.TryGetValue("itemId", out var rawId) && rawId is Guid argId)
             {
-                var item = _libraryManager.GetItemById(id);
+                itemId = argId;
+            }
+            else if (context.RouteData.Values.TryGetValue("itemId", out var routeId) && Guid.TryParse(routeId?.ToString(), out var parsedId))
+            {
+                itemId = parsedId;
+            }
+
+            if (itemId.HasValue)
+            {
+                var item = _libraryManager.GetItemById(itemId.Value);
                 if (item != null)
                 {
                     var isTrailer = item is Trailer ||
@@ -73,16 +88,73 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                         var serverUrl = Plugin.Instance?.Configuration.GetPublicServerUrl(scheme, host)
                             ?? (!string.IsNullOrWhiteSpace(host) ? $"{scheme}://{host}" : string.Empty);
 
-                        var isAudio = isAudioPath || item is MediaBrowser.Controller.Entities.Audio.Audio ||
-                                      (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
-                                                             item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
-                        var trailerParam = isTrailer ? "?isTrailer=true" : string.Empty;
-                        var target = isAudio
-                            ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
-                            : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8{trailerParam}";
+                        if (isPlaybackInfoPath)
+                        {
+                            var provider = _mediaSourceProvider ?? context.HttpContext.RequestServices.GetService<YouTubeMediaSourceProvider>();
+                            if (provider != null)
+                            {
+                                var sources = (await provider.GetMediaSources(item, context.HttpContext.RequestAborted).ConfigureAwait(false)).ToList();
+                                if (sources.Count > 0)
+                                {
+                                    foreach (var ytSource in sources)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(serverUrl))
+                                        {
+                                            ytSource.Path = RewritePluginUrlHost(ytSource.Path, serverUrl);
+                                            if (ytSource.MediaStreams != null)
+                                            {
+                                                foreach (var ms in ytSource.MediaStreams)
+                                                {
+                                                    if (!string.IsNullOrWhiteSpace(ms.Path) && ms.Path.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        ms.Path = RewritePluginUrlHost(ms.Path, serverUrl);
+                                                    }
 
-                        context.Result = new RedirectResult(target);
-                        return;
+                                                    if (!string.IsNullOrWhiteSpace(ms.DeliveryUrl) && ms.DeliveryUrl.Contains("/api/youtubePlugin/stream/", StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        ms.DeliveryUrl = RewritePluginUrlHost(ms.DeliveryUrl, serverUrl);
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        ytSource.Protocol = MediaProtocol.Http;
+                                        ytSource.IsRemote = true;
+                                        ytSource.SupportsDirectPlay = true;
+                                        ytSource.SupportsDirectStream = true;
+                                        ytSource.SupportsTranscoding = true;
+                                        if (string.IsNullOrWhiteSpace(ytSource.Container) || string.Equals(ytSource.Container, "strm", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            ytSource.Container = (!string.IsNullOrWhiteSpace(ytSource.Path) && ytSource.Path.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
+                                                ? "m4a"
+                                                : "m3u8";
+                                        }
+                                    }
+
+                                    var pbResp = new PlaybackInfoResponse
+                                    {
+                                        MediaSources = sources.ToArray(),
+                                        PlaySessionId = Guid.NewGuid().ToString("N")
+                                    };
+
+                                    context.Result = new JsonResult(pbResp);
+                                    return;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var isAudio = isAudioPath || item is MediaBrowser.Controller.Entities.Audio.Audio ||
+                                          (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
+                                                                 item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
+                            var trailerParam = isTrailer ? "?isTrailer=true" : string.Empty;
+                            var target = isAudio
+                                ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
+                                : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8{trailerParam}";
+
+                            context.Result = new RedirectResult(target);
+                            return;
+                        }
                     }
                 }
             }
@@ -168,6 +240,12 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                     ytSource.SupportsDirectPlay = true;
                     ytSource.SupportsDirectStream = true;
                     ytSource.SupportsTranscoding = true;
+                    if (string.IsNullOrWhiteSpace(ytSource.Container) || string.Equals(ytSource.Container, "strm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ytSource.Container = (!string.IsNullOrWhiteSpace(ytSource.Path) && ytSource.Path.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
+                            ? "m4a"
+                            : "m3u8";
+                    }
                 }
 
                 pbResp.MediaSources = ytSources;

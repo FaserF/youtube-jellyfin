@@ -20,7 +20,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<YouTubePlaylistAndCollectionSyncService>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<YouTubePlaylistAndCollectionSyncService>());
         serviceCollection.AddSingleton<IChannel, YouTubeChannel>();
-        serviceCollection.AddSingleton<IMediaSourceProvider, YouTubeMediaSourceProvider>();
+        serviceCollection.AddSingleton<YouTubeMediaSourceProvider>();
+        serviceCollection.AddSingleton<IMediaSourceProvider>(sp => sp.GetRequiredService<YouTubeMediaSourceProvider>());
         serviceCollection.AddSingleton<MediaBrowser.Controller.MediaSegments.IMediaSegmentProvider, YouTubeMediaSegmentProvider>();
         serviceCollection.AddSingleton<IInternalSearchProvider, YouTubeSearchProvider>();
         serviceCollection.AddSingleton<YouTubeGlobalSearchFilter>();

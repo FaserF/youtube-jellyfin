@@ -4,7 +4,7 @@
 
 **A 1:1 SmartTube Android TV & YouTube Music Replacement Built Natively into Jellyfin 10.11+**
 
-[![.NET 9.0](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![.NET 10.0](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Jellyfin 10.11+](https://img.shields.io/badge/Jellyfin-10.11%2B-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org/)
 [![YouTube Innertube & Data API v3](https://img.shields.io/badge/YouTube-TVHTML5%20%2B%20Data%20API%20v3-FF0000?logo=youtube&logoColor=white)](https://developers.google.com/youtube/v3)
 [![YouTube Music](https://img.shields.io/badge/YouTube%20Music-256kbps%20M4A%2FAAC-FF0000?logo=youtubemusic&logoColor=white)](https://music.youtube.com/)
@@ -471,7 +471,7 @@ All endpoints are hosted by `YouTubePluginController` under `/api/youtubePlugin`
 ## 🛠️ Installation, Deployment & Building from Source
 
 ### Prerequisites & `yt-dlp` Setup (Essential for Fast Playback)
-- **Jellyfin Server:** `10.11.0` or newer (`.NET 9.0` runtime).
+- **Jellyfin Server:** `10.11.0` or newer (`.NET 10.0` runtime).
 - **`yt-dlp` Binary:** YouTube streams require `yt-dlp` to resolve formats and manifests. If `yt-dlp` is missing, videos will fail to resolve and Jellyfin will hang in infinite probing loops.
 
 #### Installing `yt-dlp` in Docker Containers (Recommended: `/config/bin/yt-dlp`)

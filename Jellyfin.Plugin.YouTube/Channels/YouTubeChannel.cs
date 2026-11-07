@@ -436,6 +436,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                     Path = $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a",
                     Protocol = MediaProtocol.Http,
                     Container = "m4a",
+                    IsRemote = true,
                     SupportsDirectPlay = true,
                     SupportsDirectStream = true,
                     SupportsTranscoding = true,
