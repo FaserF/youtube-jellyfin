@@ -5,7 +5,9 @@ using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Helpers;
 using Jellyfin.Plugin.YouTube.Models;
 using Jellyfin.Plugin.YouTube.Providers;
+using Jellyfin.Plugin.YouTube.Providers.LocalMetadata;
 using Jellyfin.Plugin.YouTube.ScheduledTasks;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using Xunit;
@@ -294,5 +296,106 @@ public class YouTubePluginFullParityTests
         YouTubeIdKeys.ExtractVideoIdFromUrlOrText("[YouTubeVideo-dQw4w9WgXcQ]").Should().Be("dQw4w9WgXcQ");
         YouTubeIdKeys.ExtractVideoIdFromUrlOrText(null).Should().BeNull();
         YouTubeIdKeys.ExtractVideoIdFromUrlOrText("").Should().BeNull();
+    }
+
+    [Fact]
+    public void YouTubeIdKeys_ShouldExtractVideoId_FromStandardYtDlpFilenames()
+    {
+        // Standard bracket format from yt-dlp: %(title)s [%(id)s].%(ext)s
+        YouTubeIdKeys.ExtractVideoIdFromPath("/media/youtube/Never Gonna Give You Up [dQw4w9WgXcQ].mp4")
+            .Should().Be("dQw4w9WgXcQ");
+
+        // Parentheses format
+        YouTubeIdKeys.ExtractVideoIdFromPath("/media/youtube/Never Gonna Give You Up (dQw4w9WgXcQ).mkv")
+            .Should().Be("dQw4w9WgXcQ");
+
+        // End-of-filename suffix format
+        YouTubeIdKeys.ExtractVideoIdFromPath("/media/youtube/Never Gonna Give You Up-dQw4w9WgXcQ.mp4")
+            .Should().Be("dQw4w9WgXcQ");
+
+        // Standard bracket channel format from yt-dlp
+        YouTubeIdKeys.ExtractChannelIdFromPath("/media/youtube/Rick Astley [UCuAXFkgsw1L7xaCfnd5JJOw]")
+            .Should().Be("UCuAXFkgsw1L7xaCfnd5JJOw");
+
+        // Channel in path should not be misidentified as video ID
+        var vid = YouTubeIdKeys.ExtractVideoIdFromPath("/media/youtube/Rick Astley [UCuAXFkgsw1L7xaCfnd5JJOw]/ep.mp4");
+        vid.Should().BeNull();
+    }
+
+    [Fact]
+    public void YTDLInfoJsonHelper_ShouldPopulateMetadataFromYtdlData()
+    {
+        var ytdl = new YTDLData
+        {
+            Id = "dQw4w9WgXcQ",
+            Title = "Rick Astley - Never Gonna Give You Up",
+            Description = "The official video for Never Gonna Give You Up",
+            Uploader = "Rick Astley",
+            Channel = "RickAstleyVEVO",
+            ChannelId = "UCuAXFkgsw1L7xaCfnd5JJOw",
+            UploadDate = "20091025",
+            LikeCount = 16000000,
+            DislikeCount = 400000,
+            Categories = new List<string> { "Music" },
+            Tags = new List<string> { "Rick Astley", "Pop" },
+            Track = "Never Gonna Give You Up",
+            Artist = "Rick Astley",
+            Album = "Whenever You Need Somebody"
+        };
+
+        // Test Episode population
+        var ep = new Episode();
+        YTDLInfoJsonHelper.PopulateEpisode(ep, ytdl);
+        ep.Name.Should().Be("Rick Astley - Never Gonna Give You Up");
+        ep.Overview.Should().Contain("Never Gonna Give You Up");
+        ep.PremiereDate.Should().HaveValue();
+        ep.PremiereDate!.Value.Year.Should().Be(2009);
+        ep.ProductionYear.Should().Be(2009);
+        ep.ForcedSortName.Should().StartWith("20091025-");
+        ep.CommunityRating.Should().BeGreaterThan(9.0f);
+        YouTubeIdKeys.GetVideoId(ep.ProviderIds).Should().Be("dQw4w9WgXcQ");
+
+        // Test Movie population
+        var movie = new Movie();
+        YTDLInfoJsonHelper.PopulateMovie(movie, ytdl);
+        movie.Name.Should().Be("Rick Astley - Never Gonna Give You Up");
+        movie.ProductionYear.Should().Be(2009);
+        YouTubeIdKeys.GetVideoId(movie.ProviderIds).Should().Be("dQw4w9WgXcQ");
+
+        // Test MusicVideo population
+        var mv = new MusicVideo();
+        YTDLInfoJsonHelper.PopulateMusicVideo(mv, ytdl);
+        mv.Name.Should().Be("Never Gonna Give You Up");
+        mv.Album.Should().Be("Whenever You Need Somebody");
+        mv.Artists.Should().Contain("Rick Astley");
+        mv.ProductionYear.Should().Be(2009);
+        YouTubeIdKeys.GetVideoId(mv.ProviderIds).Should().Be("dQw4w9WgXcQ");
+
+        // Test Series population
+        var series = new Series();
+        YTDLInfoJsonHelper.PopulateSeries(series, ytdl);
+        series.Name.Should().Be("RickAstleyVEVO");
+        YouTubeIdKeys.GetChannelId(series.ProviderIds).Should().Be("UCuAXFkgsw1L7xaCfnd5JJOw");
+    }
+
+    [Fact]
+    public void YouTubeMusicVideoExternalId_ShouldSupportMusicVideo()
+    {
+        var extId = new YouTubeMusicVideoExternalId();
+        var mv = new MusicVideo();
+        var ep = new Episode();
+
+        extId.Supports(mv).Should().BeTrue();
+        extId.Supports(ep).Should().BeFalse();
+        extId.UrlFormatString.Should().Contain("youtube.com/watch?v={0}");
+    }
+
+    [Fact]
+    public void PluginConfiguration_ShouldIncludeOfflineMetadataOptions()
+    {
+        var config = new PluginConfiguration();
+        config.EnableLocalMetadataProvider.Should().BeTrue();
+        config.EnableMusicVideoSupport.Should().BeTrue();
+        config.EnableEpisodeIndexer.Should().BeTrue();
     }
 }

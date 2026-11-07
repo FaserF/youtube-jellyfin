@@ -9,6 +9,22 @@
     "imageUrl": "https://raw.githubusercontent.com/FaserF/youtube-jellyfin/main/Jellyfin.Plugin.YouTube/thumb.png",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Changes since `v1.0.1.0`:\n\n### ✨ New Features\n- **offline-metadata:** local `.info.json` zero-quota metadata provider for episodes, movies, music videos, and series\n- **music-videos:** native `MusicVideo` metadata and artwork provider for dedicated Jellyfin Music Video libraries\n- **local-artwork:** companion artwork discovery (`.webp`, `.jpg`, `.png`, `-thumb`, `-poster`, `-fanart`)\n- **indexing:** automated chronological `YouTubeEpisodeIndexerTask` post-scan task for sequential S01E01.. episode numbering\n- **naming:** support flexible yt-dlp naming conventions (`[id]`, `(id)`, `-id`, and `[UC...]` channel tags)",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.1.0.0/youtube.zip",
+        "checksum": "66b203d6dd86d54c868abaae2983004e",
+        "timestamp": "2026-11-07T21:58:42Z"
+      },
+      {
+        "version": "1.1.0.0",
+        "changelog": "Changes since `v1.0.1.0`:\n\n### ✨ New Features\n- **offline-metadata:** local `.info.json` zero-quota metadata provider for episodes, movies, music videos, and series\n- **music-videos:** native `MusicVideo` metadata and artwork provider for dedicated Jellyfin Music Video libraries\n- **local-artwork:** companion artwork discovery (`.webp`, `.jpg`, `.png`, `-thumb`, `-poster`, `-fanart`)\n- **indexing:** automated chronological `YouTubeEpisodeIndexerTask` post-scan task for sequential S01E01.. episode numbering\n- **naming:** support flexible yt-dlp naming conventions (`[id]`, `(id)`, `-id`, and `[UC...]` channel tags)",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/FaserF/youtube-jellyfin/releases/download/v1.1.0.0/youtube.zip",
+        "checksum": "66b203d6dd86d54c868abaae2983004e",
+        "timestamp": "2026-11-07T21:58:42Z"
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "Changes since `v1.0.0.0`:\n\n### ✨ New Features\n\n- hide YouTube and YouTube Music from Next Up (default ON) ([8bcb53d](https://github.com/FaserF/youtube-jellyfin/commit/8bcb53d))",
         "targetAbi": "10.10.0.0",

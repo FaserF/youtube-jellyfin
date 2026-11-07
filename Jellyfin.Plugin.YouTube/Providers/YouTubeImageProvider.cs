@@ -32,13 +32,13 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
     private YouTubeApiClient CreateClient() =>
         new(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
 
-    public bool Supports(BaseItem item) => item is Series or Season or Episode or Movie or Audio or MusicAlbum or MusicArtist;
+    public bool Supports(BaseItem item) => item is Series or Season or Episode or Movie or Audio or MusicAlbum or MusicArtist or MusicVideo;
 
     public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
     {
         return item switch
         {
-            Series or Movie or MusicArtist => new[] { ImageType.Primary, ImageType.Backdrop },
+            Series or Movie or MusicArtist or MusicVideo => new[] { ImageType.Primary, ImageType.Backdrop },
             Season or MusicAlbum => new[] { ImageType.Primary },
             Episode or Audio => new[] { ImageType.Primary },
             _ => Array.Empty<ImageType>()
@@ -53,7 +53,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
             return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
         }
 
-        if (item is Episode or Movie or Audio)
+        if (item is Episode or Movie or Audio or MusicVideo)
         {
             var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds)
                 ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
@@ -65,7 +65,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                     Type = ImageType.Primary,
                     Url = $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg"
                 });
-                if (item is Movie)
+                if (item is Movie or MusicVideo)
                 {
                     list.Add(new RemoteImageInfo
                     {

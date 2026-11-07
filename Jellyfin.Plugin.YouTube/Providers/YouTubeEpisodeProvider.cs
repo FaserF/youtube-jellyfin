@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
+using Jellyfin.Plugin.YouTube.Providers.LocalMetadata;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -69,6 +70,25 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         }
 
         var config = Config;
+
+        // Check local .info.json first if available
+        if (config.EnableLocalMetadataProvider && !string.IsNullOrWhiteSpace(info.Path))
+        {
+            var jsonPath = YTDLInfoJsonHelper.FindInfoJsonPath(info.Path);
+            if (!string.IsNullOrWhiteSpace(jsonPath) && File.Exists(jsonPath))
+            {
+                var ytdl = YTDLInfoJsonHelper.ReadInfoJson(jsonPath, cancellationToken);
+                if (ytdl != null)
+                {
+                    var localEp = new Episode();
+                    YTDLInfoJsonHelper.PopulateEpisode(localEp, ytdl);
+                    result.Item = localEp;
+                    result.HasMetadata = true;
+                    return result;
+                }
+            }
+        }
+
         var parsedEpNum = info.IndexNumber ?? ExtractEpisodeNumberFromPath(info.Path) ?? 1;
         var parsedSeasonNum = info.ParentIndexNumber ?? 1;
         var parentFolder = Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(info.Path)) ?? "YT");

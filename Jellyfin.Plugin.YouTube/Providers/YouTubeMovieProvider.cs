@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
+using Jellyfin.Plugin.YouTube.Providers.LocalMetadata;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Providers;
@@ -69,6 +70,24 @@ public class YouTubeMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>, I
         if (!config.EnableMovieSupport)
         {
             return result;
+        }
+
+        // Check local .info.json first
+        if (config.EnableLocalMetadataProvider && !string.IsNullOrWhiteSpace(info.Path))
+        {
+            var jsonPath = YTDLInfoJsonHelper.FindInfoJsonPath(info.Path);
+            if (!string.IsNullOrWhiteSpace(jsonPath) && File.Exists(jsonPath))
+            {
+                var ytdl = YTDLInfoJsonHelper.ReadInfoJson(jsonPath, cancellationToken);
+                if (ytdl != null)
+                {
+                    var localMovie = new Movie();
+                    YTDLInfoJsonHelper.PopulateMovie(localMovie, ytdl);
+                    result.Item = localMovie;
+                    result.HasMetadata = true;
+                    return result;
+                }
+            }
         }
 
         var videoId = YouTubeIdKeys.GetVideoId(info.ProviderIds)

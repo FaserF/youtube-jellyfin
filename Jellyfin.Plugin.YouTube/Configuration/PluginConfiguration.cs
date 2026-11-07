@@ -23,6 +23,9 @@ public class PluginConfiguration : BasePluginConfiguration
         EnableYouTubeLibrary = true;
         EnableStrmSync = true;
         EnableMovieSupport = true;
+        EnableMusicVideoSupport = true;
+        EnableLocalMetadataProvider = true;
+        EnableEpisodeIndexer = true;
         EnableTrailerSupport = true;
         EnableAutoTrailerStrmSync = true;
         TrailerLanguage = "en-US";
@@ -86,6 +89,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableYouTubeLibrary { get; set; }
     public bool EnableStrmSync { get; set; }
     public bool EnableMovieSupport { get; set; }
+    public bool EnableMusicVideoSupport { get; set; }
+    public bool EnableLocalMetadataProvider { get; set; }
+    public bool EnableEpisodeIndexer { get; set; }
     public bool EnableTrailerSupport { get; set; }
     public bool EnableAutoTrailerStrmSync { get; set; }
     public string TrailerLanguage { get; set; }

@@ -18,6 +18,7 @@ public class ClearYouTubeIDsTask : IScheduledTask
         YouTubeIdKeys.Channel,
         YouTubeIdKeys.Playlist,
         YouTubeIdKeys.Movie,
+        YouTubeIdKeys.MusicVideo,
         "YouTube"
     };
 
@@ -42,7 +43,8 @@ public class ClearYouTubeIDsTask : IScheduledTask
                 BaseItemKind.Series,
                 BaseItemKind.Season,
                 BaseItemKind.Episode,
-                BaseItemKind.Movie
+                BaseItemKind.Movie,
+                BaseItemKind.MusicVideo
             },
             Recursive = true
         });

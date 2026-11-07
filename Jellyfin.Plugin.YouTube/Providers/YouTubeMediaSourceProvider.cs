@@ -46,7 +46,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                         (item.Path != null && (item.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
                                               item.Path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase)));
 
-        if (item is not Episode && item is not Movie && item is not Audio && item is not Trailer && item is not Series && !isTrailer)
+        if (item is not Episode && item is not Movie && item is not MusicVideo && item is not Audio && item is not Trailer && item is not Series && !isTrailer)
         {
             return Enumerable.Empty<MediaSourceInfo>();
         }
