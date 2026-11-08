@@ -206,7 +206,7 @@ public class YouTubePluginController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(info.DirectStreamUrl))
         {
-            return Redirect(info.DirectStreamUrl);
+            return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
         }
 
         return NotFound(new { error = $"No streaming URL available for {cleanId}" });

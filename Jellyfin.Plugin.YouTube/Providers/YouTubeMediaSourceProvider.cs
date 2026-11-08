@@ -51,8 +51,19 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             return Enumerable.Empty<MediaSourceInfo>();
         }
 
+        // Never intercept physical media files for Movies / Episodes / Series - they must be handled by Jellyfin natively!
+        var isPhysicalMedia = !isTrailer &&
+                              item.Path != null &&
+                              !item.Path.EndsWith(".strm", StringComparison.OrdinalIgnoreCase) &&
+                              (item is Movie || item is Episode || item is Series || item is MusicVideo);
+
+        if (isPhysicalMedia)
+        {
+            return Enumerable.Empty<MediaSourceInfo>();
+        }
+
         var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
-        if (string.IsNullOrWhiteSpace(videoId) && item.RemoteTrailers is { Count: > 0 })
+        if (string.IsNullOrWhiteSpace(videoId) && isTrailer && item.RemoteTrailers is { Count: > 0 })
         {
             foreach (var rt in item.RemoteTrailers)
             {
@@ -60,7 +71,6 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 if (!string.IsNullOrWhiteSpace(fromUrl))
                 {
                     videoId = fromUrl;
-                    isTrailer = true;
                     break;
                 }
             }

@@ -10,6 +10,7 @@ using Jellyfin.Plugin.YouTube.ScheduledTasks;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Entities;
 using Xunit;
 
 namespace Jellyfin.Plugin.YouTube.Tests;
@@ -397,5 +398,47 @@ public class YouTubePluginFullParityTests
         config.EnableLocalMetadataProvider.Should().BeTrue();
         config.EnableMusicVideoSupport.Should().BeTrue();
         config.EnableEpisodeIndexer.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task YouTubeMediaSourceProvider_ShouldNeverHijack_PhysicalMovieWithRemoteTrailers()
+    {
+        var provider = new YouTubeMediaSourceProvider(
+            new Moq.Mock<IHttpClientFactory>().Object,
+            new Moq.Mock<Microsoft.Extensions.Logging.ILogger<YouTubeMediaSourceProvider>>().Object,
+            new Moq.Mock<Microsoft.Extensions.Logging.ILoggerFactory>().Object);
+
+        var movie = new Movie
+        {
+            Id = Guid.NewGuid(),
+            Name = "Is It Wrong to Try to Pick Up Girls in a Dungeon!: Arrow of the Orion",
+            Path = "/data/movies/Is It Wrong to Try to Pick Up Girls in a Dungeon! - Arrow of the Orion (2019)/Is It Wrong to Try to Pick Up Girls in a Dungeon! - Arrow of the Orion (2019).mkv",
+            RemoteTrailers = new[]
+            {
+                new MediaUrl { Url = "plugin://plugin.video.youtube/play/?video_id=1uNSqOdcwQI" }
+            }
+        };
+
+        var sources = await provider.GetMediaSources(movie, CancellationToken.None);
+        sources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task YouTubeMediaSourceProvider_ShouldNeverHijack_PhysicalEpisodeFile()
+    {
+        var provider = new YouTubeMediaSourceProvider(
+            new Moq.Mock<IHttpClientFactory>().Object,
+            new Moq.Mock<Microsoft.Extensions.Logging.ILogger<YouTubeMediaSourceProvider>>().Object,
+            new Moq.Mock<Microsoft.Extensions.Logging.ILoggerFactory>().Object);
+
+        var episode = new Episode
+        {
+            Id = Guid.NewGuid(),
+            Name = "Episode 1",
+            Path = "/data/series/Some Show/Season 01/S01E01.mkv"
+        };
+
+        var sources = await provider.GetMediaSources(episode, CancellationToken.None);
+        sources.Should().BeEmpty();
     }
 }

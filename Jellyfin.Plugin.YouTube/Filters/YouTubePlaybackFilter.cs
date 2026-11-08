@@ -1,6 +1,8 @@
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.MediaInfo;
@@ -64,8 +66,20 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                                     (item.Path != null && (item.Path.Contains("-trailer", StringComparison.OrdinalIgnoreCase) ||
                                                           item.Path.Contains(".trailer.", StringComparison.OrdinalIgnoreCase)));
 
+                    // Never hijack native playback for local physical media files
+                    var isPhysicalMedia = !isTrailer &&
+                                          item.Path != null &&
+                                          !item.Path.EndsWith(".strm", StringComparison.OrdinalIgnoreCase) &&
+                                          (item is Movie || item is Episode || item is Series || item is MusicVideo);
+
+                    if (isPhysicalMedia)
+                    {
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+
                     var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
-                    if (string.IsNullOrWhiteSpace(videoId) && item.RemoteTrailers is { Count: > 0 })
+                    if (string.IsNullOrWhiteSpace(videoId) && isTrailer && item.RemoteTrailers is { Count: > 0 })
                     {
                         foreach (var rt in item.RemoteTrailers)
                         {
@@ -73,7 +87,6 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                             if (!string.IsNullOrWhiteSpace(fromUrl))
                             {
                                 videoId = fromUrl;
-                                isTrailer = true;
                                 break;
                             }
                         }
