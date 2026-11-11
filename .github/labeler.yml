@@ -1,16 +1,23 @@
 backend:
-  - 'Jellyfin.Plugin.YouTube/**/*.cs'
-  - 'Jellyfin.Plugin.YouTube.csproj'
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'Jellyfin.Plugin.YouTube/**/*.cs'
+      - 'Jellyfin.Plugin.YouTube.csproj'
 
 frontend:
-  - 'Jellyfin.Plugin.YouTube/Features/Script/**/*.js'
+  - changed-files:
+    - any-glob-to-any-file: 'Jellyfin.Plugin.YouTube/Features/Script/**/*.js'
 
 tests:
-  - 'Jellyfin.Plugin.YouTube.Tests/**/*'
+  - changed-files:
+    - any-glob-to-any-file: 'Jellyfin.Plugin.YouTube.Tests/**/*'
 
 ci-cd:
-  - '.github/**/*'
+  - changed-files:
+    - any-glob-to-any-file: '.github/**/*'
 
 documentation:
-  - '*.md'
-  - 'docs/**/*'
+  - changed-files:
+    - any-glob-to-any-file:
+      - '*.md'
+      - 'docs/**/*'
