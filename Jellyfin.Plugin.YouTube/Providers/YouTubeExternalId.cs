@@ -104,6 +104,47 @@ public static class YouTubeIdKeys
     public static void SetPlaylistId(IHasProviderIds item, string playlistId) =>
         item.SetProviderId(Playlist, playlistId);
 
+    public static bool IsValidYouTubeVideoId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length != 11)
+        {
+            return false;
+        }
+
+        // Cannot start with channel prefix UC
+        if (id.StartsWith("UC", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Cannot start with known external metadata/file prefixes
+        if (id.StartsWith("tvdb", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("tmdb", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("imdb", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("anid", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("part", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("disc", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("edit", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("seas", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("ep-", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("s0", StringComparison.OrdinalIgnoreCase) ||
+            id.StartsWith("s1", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        for (int i = 0; i < id.Length; i++)
+        {
+            char c = id[i];
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static string? ExtractVideoIdFromPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -113,21 +154,28 @@ public static class YouTubeIdKeys
 
         // 1. Explicit YouTube plugin tag: [YouTubeVideo-XXXX] or [YouTubeAudio-XXXX]
         var m = VideoPathRegex.Match(path);
-        if (m.Success)
+        if (m.Success && IsValidYouTubeVideoId(m.Groups[1].Value))
         {
             return m.Groups[1].Value;
         }
 
-        // 2. Standard yt-dlp brackets: [dQw4w9WgXcQ] (must not be channel UC...)
-        var mBracket = StandardBracketVideoIdRegex.Match(path);
-        if (mBracket.Success && !mBracket.Groups[1].Value.StartsWith("UC", StringComparison.Ordinal))
+        // Only search the filename component for generic brackets/suffixes (never parent folder paths like [tvdb-XXXX])
+        var fileName = Path.GetFileName(path);
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return null;
+        }
+
+        // 2. Standard yt-dlp brackets: [dQw4w9WgXcQ] in filename
+        var mBracket = StandardBracketVideoIdRegex.Match(fileName);
+        if (mBracket.Success && IsValidYouTubeVideoId(mBracket.Groups[1].Value))
         {
             return mBracket.Groups[1].Value;
         }
 
-        // 2b. Standard parentheses: (dQw4w9WgXcQ)
-        var mParen = StandardParenVideoIdRegex.Match(path);
-        if (mParen.Success && !mParen.Groups[1].Value.StartsWith("UC", StringComparison.Ordinal))
+        // 2b. Standard parentheses: (dQw4w9WgXcQ) in filename
+        var mParen = StandardParenVideoIdRegex.Match(fileName);
+        if (mParen.Success && IsValidYouTubeVideoId(mParen.Groups[1].Value))
         {
             return mParen.Groups[1].Value;
         }
@@ -140,7 +188,7 @@ public static class YouTubeIdKeys
             {
                 var content = File.ReadAllText(infoJson);
                 var mId = Regex.Match(content, @"""id""\s*:\s*""([a-zA-Z0-9_-]{11})""");
-                if (mId.Success)
+                if (mId.Success && IsValidYouTubeVideoId(mId.Groups[1].Value))
                 {
                     return mId.Groups[1].Value;
                 }
@@ -159,7 +207,11 @@ public static class YouTubeIdKeys
                 var firstLine = File.ReadLines(path).FirstOrDefault();
                 if (!string.IsNullOrWhiteSpace(firstLine))
                 {
-                    return ExtractVideoIdFromUrlOrText(firstLine);
+                    var fromUrl = ExtractVideoIdFromUrlOrText(firstLine);
+                    if (IsValidYouTubeVideoId(fromUrl))
+                    {
+                        return fromUrl;
+                    }
                 }
             }
             catch
@@ -169,11 +221,11 @@ public static class YouTubeIdKeys
         }
 
         // 5. Standard yt-dlp suffix: video-dQw4w9WgXcQ.mp4 or video_dQw4w9WgXcQ.mkv
-        var fileName = Path.GetFileNameWithoutExtension(path);
-        if (!string.IsNullOrWhiteSpace(fileName))
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        if (!string.IsNullOrWhiteSpace(baseName))
         {
-            var mSuffix = EndOfFileNameVideoIdRegex.Match(fileName);
-            if (mSuffix.Success && !mSuffix.Groups[1].Value.StartsWith("UC", StringComparison.Ordinal))
+            var mSuffix = EndOfFileNameVideoIdRegex.Match(baseName);
+            if (mSuffix.Success && IsValidYouTubeVideoId(mSuffix.Groups[1].Value))
             {
                 return mSuffix.Groups[1].Value;
             }
@@ -190,7 +242,12 @@ public static class YouTubeIdKeys
         }
 
         var m = Regex.Match(text, @"(?:[?&]v=|youtu\.be\/|\/embed\/|\/stream\/|\[(?:YouTubeVideo|YouTubeAudio|YouTubeMusicVideo)-|\[)([a-zA-Z0-9_-]{11})");
-        return m.Success ? m.Groups[1].Value : null;
+        if (m.Success && IsValidYouTubeVideoId(m.Groups[1].Value))
+        {
+            return m.Groups[1].Value;
+        }
+
+        return null;
     }
 
     public static string? ExtractChannelIdFromPath(string? path)
@@ -260,7 +317,7 @@ public static class YouTubeIdKeys
                 return true;
             }
 
-            if (StandardBracketVideoIdRegex.IsMatch(path) || ChannelPathRegex.IsMatch(path) || StandardBracketChannelRegex.IsMatch(path))
+            if (ExtractVideoIdFromPath(path) != null || ChannelPathRegex.IsMatch(path) || StandardBracketChannelRegex.IsMatch(path))
             {
                 return true;
             }
@@ -320,7 +377,7 @@ public static class YouTubeIdKeys
                 return true;
             }
 
-            if (StandardBracketVideoIdRegex.IsMatch(dto.Path) || ChannelPathRegex.IsMatch(dto.Path) || StandardBracketChannelRegex.IsMatch(dto.Path))
+            if (ExtractVideoIdFromPath(dto.Path) != null || ChannelPathRegex.IsMatch(dto.Path) || StandardBracketChannelRegex.IsMatch(dto.Path))
             {
                 return true;
             }

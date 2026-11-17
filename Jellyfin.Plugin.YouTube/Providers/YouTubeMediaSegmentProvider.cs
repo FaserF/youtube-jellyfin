@@ -50,8 +50,13 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
             return ValueTask.FromResult(false);
         }
 
+        if (!YouTubeIdKeys.IsYouTubeItem(item, item.Path))
+        {
+            return ValueTask.FromResult(false);
+        }
+
         var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
-        return ValueTask.FromResult(!string.IsNullOrWhiteSpace(videoId));
+        return ValueTask.FromResult(!string.IsNullOrWhiteSpace(videoId) && YouTubeIdKeys.IsValidYouTubeVideoId(videoId));
     }
 
     public async Task<IReadOnlyList<MediaSegmentDto>> GetMediaSegments(
@@ -60,13 +65,13 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
     {
         var segments = new List<MediaSegmentDto>();
         var item = _libraryManager.GetItemById(request.ItemId);
-        if (item == null)
+        if (item == null || !YouTubeIdKeys.IsYouTubeItem(item, item.Path))
         {
             return segments;
         }
 
         var videoId = YouTubeIdKeys.GetVideoId(item.ProviderIds) ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
-        if (string.IsNullOrWhiteSpace(videoId))
+        if (string.IsNullOrWhiteSpace(videoId) || !YouTubeIdKeys.IsValidYouTubeVideoId(videoId))
         {
             return segments;
         }

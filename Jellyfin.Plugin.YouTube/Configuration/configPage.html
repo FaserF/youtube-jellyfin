@@ -22,6 +22,16 @@
                             style="background:#18181b;border:1px solid #e50914;border-radius:8px;padding:16px;margin-bottom:20px;">
                             <h3 style="margin-top:0;color:#ff4d4d;">📺 Link Jellyfin User to YouTube via TV Code</h3>
                             <div class="inputContainer">
+                                <label class="inputLabel" for="txtOAuthClientId">OAuth Client ID</label>
+                                <input id="txtOAuthClientId" type="text" is="emby-input" />
+                                <div class="fieldDescription">Google Cloud OAuth 2.0 Client ID (Application type: "TVs and Limited Input devices").</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtOAuthClientSecret">OAuth Client Secret</label>
+                                <input id="txtOAuthClientSecret" type="password" is="emby-input" />
+                                <div class="fieldDescription">Google Cloud OAuth 2.0 Client Secret.</div>
+                            </div>
+                            <div class="inputContainer">
                                 <label class="inputLabel" for="selectJellyfinUser">Select Jellyfin User to Link</label>
                                 <select is="emby-select" id="selectJellyfinUser"
                                     class="emby-select-withcolor emby-select"></select>
@@ -483,6 +493,8 @@
                     Dashboard.showLoadingMsg();
                     loadUsersList();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        document.getElementById("txtOAuthClientId").value = config.OAuthClientId || "";
+                        document.getElementById("txtOAuthClientSecret").value = config.OAuthClientSecret || "";
                         document.getElementById("txtYtDlpPath").value = config.YtDlpPath || "/config/bin/yt-dlp";
                         document.getElementById("chkAutoDetectYtDlp").checked = config.AutoDetectYtDlp !== false;
                         document.getElementById("chkEnablePrefetch").checked = config.EnableSpeculativePrefetch !== false;
@@ -574,6 +586,8 @@
                     e.preventDefault();
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.OAuthClientId = document.getElementById("txtOAuthClientId").value.trim();
+                        config.OAuthClientSecret = document.getElementById("txtOAuthClientSecret").value.trim();
                         config.YtDlpPath = document.getElementById("txtYtDlpPath").value.trim() || "/config/bin/yt-dlp";
                         config.AutoDetectYtDlp = document.getElementById("chkAutoDetectYtDlp").checked;
                         config.EnableSpeculativePrefetch = document.getElementById("chkEnablePrefetch").checked;

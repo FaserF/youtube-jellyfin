@@ -19,17 +19,20 @@ public class YouTubePluginController : ControllerBase
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILibraryManager _libraryManager;
+    private readonly IUserManager _userManager;
     private readonly ILogger<YouTubePluginController> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
     public YouTubePluginController(
         IHttpClientFactory httpClientFactory,
         ILibraryManager libraryManager,
+        IUserManager userManager,
         ILogger<YouTubePluginController> logger,
         ILoggerFactory loggerFactory)
     {
         _httpClientFactory = httpClientFactory;
         _libraryManager = libraryManager;
+        _userManager = userManager;
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
@@ -91,32 +94,27 @@ public class YouTubePluginController : ControllerBase
 
     [HttpGet("users")]
     [AllowAnonymous]
-    public async Task<ActionResult> GetUserMappings(CancellationToken cancellationToken)
+    public ActionResult GetUserMappings(CancellationToken cancellationToken)
     {
         var config = Config;
         var jfUsers = new List<object>();
         try
         {
-            using var http = _httpClientFactory.CreateClient();
-            var json = await http.GetStringAsync("http://127.0.0.1:8096/Users/Public", cancellationToken).ConfigureAwait(false);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            var users = _userManager.GetUsers();
+            foreach (var user in users)
             {
-                foreach (var el in doc.RootElement.EnumerateArray())
+                var uid = user.Id.ToString("N");
+                var uname = user.Username;
+                if (!string.IsNullOrWhiteSpace(uname))
                 {
-                    var uid = el.TryGetProperty("Id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
-                    var uname = el.TryGetProperty("Name", out var nProp) ? nProp.GetString() ?? string.Empty : string.Empty;
-                    if (!string.IsNullOrWhiteSpace(uname))
-                    {
-                        var linkedAcc = config.GetAccountForUser(uname)?.AccountName ?? config.GetAccountForUser(uid)?.AccountName;
-                        jfUsers.Add(new { id = uid, username = uname, linkedAccount = linkedAcc, isLinked = !string.IsNullOrWhiteSpace(linkedAcc) });
-                    }
+                    var linkedAcc = config.GetAccountForUser(uname)?.AccountName ?? config.GetAccountForUser(uid)?.AccountName;
+                    jfUsers.Add(new { id = uid, username = uname, linkedAccount = linkedAcc, isLinked = !string.IsNullOrWhiteSpace(linkedAcc) });
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not query /Users/Public");
+            _logger.LogWarning(ex, "Could not query users via IUserManager");
         }
 
         return Ok(new

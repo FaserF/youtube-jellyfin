@@ -107,26 +107,25 @@ public partial class YouTubeApiClient : IDisposable
             return null;
         }
 
-        var payload = JsonSerializer.Serialize(new
+        var form = new Dictionary<string, string>
         {
-            client_id = clientId,
-            scope = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content",
-            device_id = Guid.NewGuid().ToString(),
-            device_model = "YtLr::Shell"
-        });
+            ["client_id"] = clientId,
+            ["scope"] = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content"
+        };
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/o/oauth2/device/code")
+        using var req = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/device/code")
         {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            Content = new FormUrlEncodedContent(form)
         };
 
         using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
+            _logger.LogWarning("Google OAuth device code request failed with status {StatusCode}: {Response}", resp.StatusCode, json);
             return null;
         }
 
-        var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Deserialize<YouTubeDeviceCodeResponse>(json);
     }
 
@@ -149,10 +148,10 @@ public partial class YouTubeApiClient : IDisposable
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret,
             ["code"] = deviceCode,
-            ["grant_type"] = "http://oauth.net/grant_type/device/1.0"
+            ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
         };
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/o/oauth2/token")
+        using var req = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token")
         {
             Content = new FormUrlEncodedContent(form)
         };

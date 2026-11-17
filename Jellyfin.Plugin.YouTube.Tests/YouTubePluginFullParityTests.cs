@@ -441,4 +441,26 @@ public class YouTubePluginFullParityTests
         var sources = await provider.GetMediaSources(episode, CancellationToken.None);
         sources.Should().BeEmpty();
     }
+
+    [Fact]
+    public void YouTubeIdKeys_ShouldRejectMetadataPrefixes_AndExtractOnlyValidYouTubeIds()
+    {
+        // TVDB, TMDB, IMDB bracket tags in parent folder paths must NOT be detected as video IDs
+        const string tvShowEpisodePath = "/data/tv/Akame ga Kill! (2014) [tvdb-121361]/Season 01/S01E01 - Kill the Darkness.mkv";
+        YouTubeIdKeys.ExtractVideoIdFromPath(tvShowEpisodePath).Should().BeNull();
+        YouTubeIdKeys.IsYouTubeItem(null, tvShowEpisodePath).Should().BeFalse();
+
+        const string tmdbMoviePath = "/data/movies/Universal Soldier (1992) [tmdbid-9349]/Universal Soldier (1992).mkv";
+        YouTubeIdKeys.ExtractVideoIdFromPath(tmdbMoviePath).Should().BeNull();
+        YouTubeIdKeys.IsYouTubeItem(null, tmdbMoviePath).Should().BeFalse();
+
+        // Valid YouTube video files must be recognized
+        const string ytYtDlpBracketPath = "/data/youtube/Channel/Season 01/S01E01 - Never Gonna Give You Up [dQw4w9WgXcQ].mp4";
+        YouTubeIdKeys.ExtractVideoIdFromPath(ytYtDlpBracketPath).Should().Be("dQw4w9WgXcQ");
+        YouTubeIdKeys.IsYouTubeItem(null, ytYtDlpBracketPath).Should().BeTrue();
+
+        const string ytPluginTaggedPath = "/data/youtube/Home Assistant/Season 01/S01E01 [YouTubeVideo-YpcrIy5f774].strm";
+        YouTubeIdKeys.ExtractVideoIdFromPath(ytPluginTaggedPath).Should().Be("YpcrIy5f774");
+        YouTubeIdKeys.IsYouTubeItem(null, ytPluginTaggedPath).Should().BeTrue();
+    }
 }

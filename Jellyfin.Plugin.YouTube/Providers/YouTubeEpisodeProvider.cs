@@ -33,10 +33,15 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
     public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
     {
         var results = new List<RemoteSearchResult>();
+        if (!YouTubeIdKeys.IsYouTubeItem(searchInfo, searchInfo.Path))
+        {
+            return results;
+        }
+
         var videoId = YouTubeIdKeys.GetVideoId(searchInfo.ProviderIds)
             ?? YouTubeIdKeys.ExtractVideoIdFromPath(searchInfo.Path);
 
-        if (!string.IsNullOrWhiteSpace(videoId))
+        if (!string.IsNullOrWhiteSpace(videoId) && YouTubeIdKeys.IsValidYouTubeVideoId(videoId))
         {
             using var client = CreateClient();
             var meta = await client.GetVideoMetadataAsync(videoId, cancellationToken).ConfigureAwait(false);
@@ -61,10 +66,15 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
     public async Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
     {
         var result = new MetadataResult<Episode>();
+        if (!YouTubeIdKeys.IsYouTubeItem(info, info.Path))
+        {
+            return result;
+        }
+
         var videoId = YouTubeIdKeys.GetVideoId(info.ProviderIds)
             ?? YouTubeIdKeys.ExtractVideoIdFromPath(info.Path);
 
-        if (string.IsNullOrWhiteSpace(videoId))
+        if (string.IsNullOrWhiteSpace(videoId) || !YouTubeIdKeys.IsValidYouTubeVideoId(videoId))
         {
             return result;
         }
