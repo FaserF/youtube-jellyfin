@@ -38,6 +38,8 @@ public class YouTubeEpisodeIndexerTask : ILibraryPostScanTask, IScheduledTask
 
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         if (!config.EnableEpisodeIndexer)
         {
@@ -47,11 +49,19 @@ public class YouTubeEpisodeIndexerTask : ILibraryPostScanTask, IScheduledTask
         progress.Report(0);
         _logger.LogInformation("YouTube Plugin: Starting chronological episode reindexing...");
 
-        var shows = _libraryManager.GetItemList(new InternalItemsQuery
+        List<Series> shows;
+        try
         {
-            IncludeItemTypes = new[] { BaseItemKind.Series },
-            Recursive = true
-        }).OfType<Series>().Where(s => YouTubeIdKeys.IsYouTubeItem(s, s.Path)).ToList();
+            shows = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Series },
+                Recursive = true
+            }).OfType<Series>().Where(s => YouTubeIdKeys.IsYouTubeItem(s, s.Path)).ToList();
+        }
+        catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
 
         var showCount = shows.Count;
         for (var i = 0; i < showCount; i++)

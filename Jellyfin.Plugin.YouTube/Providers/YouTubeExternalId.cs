@@ -28,7 +28,7 @@ public static class YouTubeIdKeys
     private static readonly Regex StandardBracketChannelRegex = new(@"\[(UC[a-zA-Z0-9_-]{20,28})\]", RegexOptions.Compiled);
     private static readonly Regex RawChannelRegex = new(@"(UC[a-zA-Z0-9_-]{20,24})", RegexOptions.Compiled);
     private static readonly Regex PlaylistPathRegex = new(@"\[(?:YouTubePlaylist|YouTubeAlbum)-([a-zA-Z0-9_-]{10,64})\]", RegexOptions.Compiled);
-    private static readonly Regex EndOfFileNameVideoIdRegex = new(@"(?:[\s\-_])([a-zA-Z0-9_-]{11})(?:\.[a-zA-Z0-9]{2,4})?$", RegexOptions.Compiled);
+    private static readonly Regex EndOfFileNameVideoIdRegex = new(@"(?<!\s)[\-_]([a-zA-Z0-9_-]{11})$", RegexOptions.Compiled);
 
     public static string? GetVideoId(IDictionary<string, string>? ids)
     {
@@ -221,13 +221,17 @@ public static class YouTubeIdKeys
         }
 
         // 5. Standard yt-dlp suffix: video-dQw4w9WgXcQ.mp4 or video_dQw4w9WgXcQ.mkv
-        var baseName = Path.GetFileNameWithoutExtension(fileName);
-        if (!string.IsNullOrWhiteSpace(baseName))
+        // Never apply heuristic suffix matching to .strm files (step 4 already inspects .strm URLs).
+        if (!path.EndsWith(".strm", StringComparison.OrdinalIgnoreCase))
         {
-            var mSuffix = EndOfFileNameVideoIdRegex.Match(baseName);
-            if (mSuffix.Success && IsValidYouTubeVideoId(mSuffix.Groups[1].Value))
+            var baseName = Path.GetFileNameWithoutExtension(fileName);
+            if (!string.IsNullOrWhiteSpace(baseName))
             {
-                return mSuffix.Groups[1].Value;
+                var mSuffix = EndOfFileNameVideoIdRegex.Match(baseName);
+                if (mSuffix.Success && IsValidYouTubeVideoId(mSuffix.Groups[1].Value))
+                {
+                    return mSuffix.Groups[1].Value;
+                }
             }
         }
 

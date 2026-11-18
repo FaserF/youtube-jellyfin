@@ -462,5 +462,27 @@ public class YouTubePluginFullParityTests
         const string ytPluginTaggedPath = "/data/youtube/Home Assistant/Season 01/S01E01 [YouTubeVideo-YpcrIy5f774].strm";
         YouTubeIdKeys.ExtractVideoIdFromPath(ytPluginTaggedPath).Should().Be("YpcrIy5f774");
         YouTubeIdKeys.IsYouTubeItem(null, ytPluginTaggedPath).Should().BeTrue();
+
+        // Non-YouTube .strm files ending in 11-letter words must NOT be misidentified as YouTube videos
+        const string nonYtStrm1 = "/data/tv/The Rookie/Season 03/The Rookie - S03E03 - Todesurteil.strm";
+        YouTubeIdKeys.ExtractVideoIdFromPath(nonYtStrm1).Should().BeNull();
+        YouTubeIdKeys.IsYouTubeItem(null, nonYtStrm1).Should().BeFalse();
+
+        const string nonYtStrm2 = "/data/tv/The Rookie/Season 03/The Rookie - S03E05 - Schusslinie.strm";
+        YouTubeIdKeys.ExtractVideoIdFromPath(nonYtStrm2).Should().BeNull();
+        YouTubeIdKeys.IsYouTubeItem(null, nonYtStrm2).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SanitizeFileName_ShouldNeverSplitSurrogatePairAtBoundary()
+    {
+        // 89 ASCII chars + 2-char emoji (surrogate pair) -> truncating at 90 would split the emoji
+        var prefix = new string('a', 89) + "🦽extra";
+        var sanitized = SyncYouTubeStrmTask.SanitizeFileName(prefix);
+        sanitized.Should().HaveLength(89);
+        char.IsSurrogate(sanitized[^1]).Should().BeFalse();
+
+        var xmlSafe = SyncYouTubeStrmTask.SanitizeXmlText("Hello \uD83E world \u0001!");
+        xmlSafe.Should().Be("Hello  world !");
     }
 }

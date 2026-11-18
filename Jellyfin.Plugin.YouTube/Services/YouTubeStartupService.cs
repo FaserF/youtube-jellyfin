@@ -263,8 +263,8 @@ public class YouTubeStartupService : IHostedService
                     try
                     {
                         using var client = new YouTubeApiClient(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
-                        var added = await ScheduledTasks.SyncYouTubeStrmTask.PerformSyncAsync(client, config, _logger, CancellationToken.None).ConfigureAwait(false);
-                        if (added > 0)
+                        var added = await ScheduledTasks.SyncYouTubeStrmTask.PerformSyncAsync(client, config, _logger, CancellationToken.None, skipPrune: _libraryManager.IsScanRunning).ConfigureAwait(false);
+                        if (added > 0 && !_libraryManager.IsScanRunning)
                         {
                             _libraryManager.QueueLibraryScan();
                         }

@@ -157,8 +157,15 @@ public class YouTubePluginController : ControllerBase
     {
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
-        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
-        return info == null ? NotFound(new { error = $"Could not resolve YouTube stream for {cleanId}" }) : Ok(info);
+        try
+        {
+            var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+            return info == null ? NotFound(new { error = $"Could not resolve YouTube stream for {cleanId}" }) : Ok(info);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(499);
+        }
     }
 
     [HttpGet("stream/{videoId}/play")]
@@ -173,7 +180,16 @@ public class YouTubePluginController : ControllerBase
     {
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
-        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        YouTubeStreamInfoDto? info;
+        try
+        {
+            info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(499);
+        }
+
         if (info == null)
         {
             return NotFound(new { error = $"Unable to resolve YouTube stream for {cleanId}" });
@@ -195,6 +211,10 @@ public class YouTubePluginController : ControllerBase
             {
                 var rawM3u8 = await client.HttpClient.GetStringAsync(info.HlsManifestUrl, cancellationToken).ConfigureAwait(false);
                 return Content(RewriteM3u8Urls(rawM3u8, info.HlsManifestUrl), "application/vnd.apple.mpegurl; charset=utf-8");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return StatusCode(499);
             }
             catch (Exception ex)
             {
@@ -225,7 +245,16 @@ public class YouTubePluginController : ControllerBase
     {
         var cleanId = CleanVideoId(videoId);
         using var client = CreateClient();
-        var info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        YouTubeStreamInfoDto? info;
+        try
+        {
+            info = await client.ResolveStreamAsync(cleanId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         if (info == null)
         {
             Response.StatusCode = StatusCodes.Status404NotFound;

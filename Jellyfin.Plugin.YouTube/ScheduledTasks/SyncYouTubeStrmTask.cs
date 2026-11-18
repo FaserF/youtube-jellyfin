@@ -37,8 +37,11 @@ public class SyncYouTubeStrmTask : IScheduledTask
         progress.Report(5);
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         using var client = new YouTubeApiClient(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
-        await PerformSyncAsync(client, config, _logger, cancellationToken).ConfigureAwait(false);
-        _libraryManager.QueueLibraryScan();
+        await PerformSyncAsync(client, config, _logger, cancellationToken, skipPrune: _libraryManager.IsScanRunning).ConfigureAwait(false);
+        if (!_libraryManager.IsScanRunning)
+        {
+            _libraryManager.QueueLibraryScan();
+        }
         progress.Report(100);
     }
 
@@ -46,7 +49,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
         YouTubeApiClient client,
         PluginConfiguration config,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool skipPrune = false)
     {
         var targetDir = !string.IsNullOrWhiteSpace(config.StrmLibraryPath) ? config.StrmLibraryPath : "/data/youtube";
         Directory.CreateDirectory(targetDir);
@@ -78,7 +82,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
 
                 var seasonDir = Path.Combine(targetDir, folderName, "Season 01");
                 Directory.CreateDirectory(seasonDir);
-                totalAdded += await WriteStrmVideosAsync(seasonDir, feedVideos, config, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(seasonDir, feedVideos, config, cancellationToken, skipPrune).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -104,7 +108,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                     upcomingVideos[idx].PublishedAt = DateTime.UtcNow.Date.AddDays((idx % 7) + 1);
                 }
 
-                totalAdded += await WriteStrmVideosAsync(upcomingDir, upcomingVideos, config, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(upcomingDir, upcomingVideos, config, cancellationToken, skipPrune).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -126,7 +130,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
             Directory.CreateDirectory(seasonDir);
 
             var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 15, cancellationToken).ConfigureAwait(false);
-            totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken).ConfigureAwait(false);
+            totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken, skipPrune).ConfigureAwait(false);
         }
 
         // 2b. Also ensure any existing channel directories already on disk have their latest videos populated
@@ -149,7 +153,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                             var videos = await client.GetChannelRssFeedAsync(cid, 15, cancellationToken).ConfigureAwait(false);
                             if (videos.Count > 0)
                             {
-                                totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken).ConfigureAwait(false);
+                                totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken, skipPrune).ConfigureAwait(false);
                                 syncedChannelIds.Add(cid);
                             }
                         }
@@ -178,7 +182,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 var safePl = SanitizeFileName(pl.Title);
                 var plDir = Path.Combine(targetDir, $"Playlist - {safePl} [YouTubePlaylist-{pl.PlaylistId}]", "Season 01");
                 Directory.CreateDirectory(plDir);
-                totalAdded += await WriteStrmVideosAsync(plDir, plVideos, config, cancellationToken).ConfigureAwait(false);
+                totalAdded += await WriteStrmVideosAsync(plDir, plVideos, config, cancellationToken, skipPrune).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -328,7 +332,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
         string seasonDir,
         List<YouTubeVideoItem> videos,
         PluginConfiguration config,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool skipPrune = false)
     {
         var added = 0;
         var activePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -357,6 +362,11 @@ public class SyncYouTubeStrmTask : IScheduledTask
                     if (!string.Equals(old, strmPath, StringComparison.OrdinalIgnoreCase))
                     {
                         File.Delete(old);
+                        var oldNfo = Path.ChangeExtension(old, ".nfo");
+                        if (File.Exists(oldNfo))
+                        {
+                            File.Delete(oldNfo);
+                        }
                     }
                 }
             }
@@ -380,9 +390,9 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 var pubDate = v.PublishedAt ?? (!string.IsNullOrWhiteSpace(v.PublishedTimeText) ? Api.YouTubeApiClient.ParseRelativeDate(v.PublishedTimeText) : null) ?? DateTime.UtcNow.Date;
                 var dateStr = pubDate.ToString("yyyy-MM-dd");
                 var overview = Api.YouTubeApiClient.FormatRichOverview(v, v.DislikeStats, v.SponsorSegments);
-                var plot = System.Security.SecurityElement.Escape(overview);
-                var title = System.Security.SecurityElement.Escape(safeTitle);
-                var studio = System.Security.SecurityElement.Escape(!string.IsNullOrWhiteSpace(v.ChannelTitle) ? v.ChannelTitle : "YouTube");
+                var plot = System.Security.SecurityElement.Escape(SanitizeXmlText(overview));
+                var title = System.Security.SecurityElement.Escape(SanitizeXmlText(safeTitle));
+                var studio = System.Security.SecurityElement.Escape(SanitizeXmlText(!string.IsNullOrWhiteSpace(v.ChannelTitle) ? v.ChannelTitle : "YouTube"));
 
                 var nfoContent = $@"<?xml version=""1.0"" encoding=""utf-8"" standalone=""yes""?>
 <episodedetails>
@@ -400,21 +410,25 @@ public class SyncYouTubeStrmTask : IScheduledTask
         }
 
         // Prune stale .strm and .nfo files in this feed folder so feeds stay clean and never accumulate duplicates
-        try
+        // Skip pruning while a Jellyfin library scan is running so ProbeProvider never hits FileNotFoundException mid-scan.
+        if (!skipPrune)
         {
-            foreach (var existing in Directory.GetFiles(seasonDir, "*.*"))
+            try
             {
-                var ext = Path.GetExtension(existing);
-                if ((ext.Equals(".strm", StringComparison.OrdinalIgnoreCase) || ext.Equals(".nfo", StringComparison.OrdinalIgnoreCase)) &&
-                    !activePaths.Contains(existing))
+                foreach (var existing in Directory.GetFiles(seasonDir, "*.*"))
                 {
-                    File.Delete(existing);
+                    var ext = Path.GetExtension(existing);
+                    if ((ext.Equals(".strm", StringComparison.OrdinalIgnoreCase) || ext.Equals(".nfo", StringComparison.OrdinalIgnoreCase)) &&
+                        !activePaths.Contains(existing))
+                    {
+                        File.Delete(existing);
+                    }
                 }
             }
-        }
-        catch
-        {
-            // Ignore cleanup errors
+            catch
+            {
+                // Ignore cleanup errors
+            }
         }
 
         return added;
@@ -442,8 +456,53 @@ public class SyncYouTubeStrmTask : IScheduledTask
         }
 
         var invalid = Path.GetInvalidFileNameChars();
-        var cleaned = new string(name.Select(c => invalid.Contains(c) || c is ':' or '/' or '\\' or '?' or '*' or '"' or '<' or '>' or '|' ? '_' : c).ToArray());
-        return cleaned.Length > 90 ? cleaned[..90].Trim() : cleaned.Trim();
+        var cleanText = SanitizeXmlText(name);
+        var cleaned = new string(cleanText.Select(c => invalid.Contains(c) || c is ':' or '/' or '\\' or '?' or '*' or '"' or '<' or '>' or '|' ? '_' : c).ToArray());
+        if (cleaned.Length <= 90)
+        {
+            return cleaned.Trim();
+        }
+
+        // Never split a UTF-16 surrogate pair at the truncation boundary (would leave an unpaired surrogate in filenames/NFO XML).
+        var cut = char.IsHighSurrogate(cleaned[89]) ? 89 : 90;
+        return cleaned[..cut].Trim();
+    }
+
+    public static string SanitizeXmlText(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    sb.Append(c);
+                    sb.Append(text[i + 1]);
+                    i++;
+                }
+                continue;
+            }
+
+            if (char.IsLowSurrogate(c))
+            {
+                continue;
+            }
+
+            // Valid XML 1.0 character check
+            if (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD))
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

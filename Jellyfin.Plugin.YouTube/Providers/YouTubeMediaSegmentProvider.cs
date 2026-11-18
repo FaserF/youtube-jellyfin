@@ -184,6 +184,10 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
                 }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to resolve media segments/chapters for {VideoId}", videoId);
