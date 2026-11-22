@@ -24,11 +24,21 @@ def compute_md5(file_path: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Update Jellyfin manifest.json")
-    parser.add_argument("--manifest-path", default="manifest.json", help="Path to manifest.json")
-    parser.add_argument("--zip-path", required=True, help="Path to compiled youtube.zip")
-    parser.add_argument("--version", required=True, help="New release version (e.g. 1.0.1.0)")
-    parser.add_argument("--changelog-file", help="Path to markdown/text changelog summary")
-    parser.add_argument("--repo", default="FaserF/youtube-jellyfin", help="GitHub repo (owner/repo)")
+    parser.add_argument(
+        "--manifest-path", default="manifest.json", help="Path to manifest.json"
+    )
+    parser.add_argument(
+        "--zip-path", required=True, help="Path to compiled youtube.zip"
+    )
+    parser.add_argument(
+        "--version", required=True, help="New release version (e.g. 1.0.1.0)"
+    )
+    parser.add_argument(
+        "--changelog-file", help="Path to markdown/text changelog summary"
+    )
+    parser.add_argument(
+        "--repo", default="FaserF/youtube-jellyfin", help="GitHub repo (owner/repo)"
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.zip_path):
@@ -48,8 +58,10 @@ def main():
     with open(args.manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    source_url = f"https://github.com/{args.repo}/releases/download/v{args.version}/youtube.zip"
+    now_iso = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    source_url = (
+        f"https://github.com/{args.repo}/releases/download/v{args.version}/youtube.zip"
+    )
 
     # Supported target ABIs (Jellyfin 12.0 and 10.10)
     target_abis = ["12.0.0.0", "10.10.0.0"]
@@ -57,17 +69,22 @@ def main():
     for plugin in manifest:
         if plugin.get("guid", "").lower() == "a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c":
             existing_versions = plugin.get("versions", [])
-            updated_versions = [v for v in existing_versions if v.get("version") != args.version]
+            updated_versions = [
+                v for v in existing_versions if v.get("version") != args.version
+            ]
 
             for abi in target_abis:
-                updated_versions.insert(0, {
-                    "version": args.version,
-                    "changelog": changelog,
-                    "targetAbi": abi,
-                    "sourceUrl": source_url,
-                    "checksum": checksum,
-                    "timestamp": now_iso
-                })
+                updated_versions.insert(
+                    0,
+                    {
+                        "version": args.version,
+                        "changelog": changelog,
+                        "targetAbi": abi,
+                        "sourceUrl": source_url,
+                        "checksum": checksum,
+                        "timestamp": now_iso,
+                    },
+                )
 
             plugin["versions"] = updated_versions
 
