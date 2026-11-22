@@ -160,13 +160,24 @@ def is_noise(msg: str) -> bool:
 
 def keyword_bucket(msg: str) -> str:
     m = msg.lower()
-    if re.search(r"\b(general[\s_]fix|small[\s_]fix|bug[\s_]fix|fix(es|ed)?\b|fix\s+\w)", m):
+    if re.search(
+        r"\b(general[\s_]fix|small[\s_]fix|bug[\s_]fix|fix(es|ed)?\b|fix\s+\w)", m
+    ):
         return "fix"
-    if re.search(r"\b(ci\b|linter?|pipeline|workflow|github[\s_]action|changelog|dockerfile?|container)\b", m):
+    if re.search(
+        r"\b(ci\b|linter?|pipeline|workflow|github[\s_]action|changelog|dockerfile?|container)\b",
+        m,
+    ):
         return "ci"
-    if re.search(r"\b(update[\s_]depend|bump[\s_]depend|renovate|dependency[\s_]update|upgrade[\s_]dep)\b", m):
+    if re.search(
+        r"\b(update[\s_]depend|bump[\s_]depend|renovate|dependency[\s_]update|upgrade[\s_]dep)\b",
+        m,
+    ):
         return "chore"
-    if re.search(r"\b(add(ed|s)?[\s_]+(missing[\s_]+)?(feature|support|ability)|new[\s_]feature|stream(ing)?|strm|channel|sponsorblock|smarttube)\b", m):
+    if re.search(
+        r"\b(add(ed|s)?[\s_]+(missing[\s_]+)?(feature|support|ability)|new[\s_]feature|stream(ing)?|strm|channel|sponsorblock|smarttube)\b",
+        m,
+    ):
         return "feat"
     if re.search(r"\b(security|vulnerability|cve|auth(en|oriz)?|oauth|profile)\b", m):
         return "security"
@@ -178,7 +189,9 @@ def keyword_bucket(msg: str) -> str:
         return "docs"
     if re.search(r"\b(test(s|ing)?|spec|unit[\s_]test|xunit)\b", m):
         return "test"
-    if re.search(r"\b(ui\b|ux\b|tv\b|android[\s_]tv|layout|theme|design|modal|component)\b", m):
+    if re.search(
+        r"\b(ui\b|ux\b|tv\b|android[\s_]tv|layout|theme|design|modal|component)\b", m
+    ):
         return "ui"
     if re.search(r"\b(api\b|endpoint|route|router|hls|dash|innertube|yt-dlp)\b", m):
         return "api"
@@ -311,7 +324,9 @@ def build_changelog(from_tag: str, total_commits: int, repo: str) -> str:
             for item in shown:
                 lines.append(f"- {format_item(item['display'], item['hashes'], repo)}")
             lines.append("")
-            lines.append(f"<details><summary>Show {len(hidden)} more changes...</summary>\n")
+            lines.append(
+                f"<details><summary>Show {len(hidden)} more changes...</summary>\n"
+            )
             for item in hidden:
                 lines.append(f"- {format_item(item['display'], item['hashes'], repo)}")
             lines.append("\n</details>\n")
@@ -325,9 +340,15 @@ def build_changelog(from_tag: str, total_commits: int, repo: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Generate conventional changelog.")
-    parser.add_argument("--from-tag", default="", help="Previous git tag to compare from")
-    parser.add_argument("--total-commits", type=int, default=0, help="Total commit count hint")
-    parser.add_argument("--repo", default="FaserF/youtube-jellyfin", help="GitHub repo (owner/repo)")
+    parser.add_argument(
+        "--from-tag", default="", help="Previous git tag to compare from"
+    )
+    parser.add_argument(
+        "--total-commits", type=int, default=0, help="Total commit count hint"
+    )
+    parser.add_argument(
+        "--repo", default="FaserF/youtube-jellyfin", help="GitHub repo (owner/repo)"
+    )
     args = parser.parse_args()
 
     changelog = build_changelog(args.from_tag, args.total_commits, args.repo)
