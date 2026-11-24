@@ -306,8 +306,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
             var strmPath = Path.Combine(albumDir, $"{trackNum:D4} - {safeTitle} [YouTubeAudio-{t.VideoId}].strm");
             activePaths.Add(strmPath);
 
-            const string internalServerUrl = "http://127.0.0.1:8096";
-            var expectedUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
+            var serverBaseUrl = GetStrmServerBaseUrl(config);
+            var expectedUrl = $"{serverBaseUrl}/api/youtubePlugin/stream/{t.VideoId}/audio.m4a";
             if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
@@ -380,8 +380,8 @@ public class SyncYouTubeStrmTask : IScheduledTask
                 // Ignore cleanup errors
             }
 
-            const string internalServerUrl = "http://127.0.0.1:8096";
-            var expectedUrl = $"{internalServerUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
+            var serverBaseUrl = GetStrmServerBaseUrl(config);
+            var expectedUrl = $"{serverBaseUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
             if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
@@ -471,6 +471,22 @@ public class SyncYouTubeStrmTask : IScheduledTask
         // Never split a UTF-16 surrogate pair at the truncation boundary (would leave an unpaired surrogate in filenames/NFO XML).
         var cut = char.IsHighSurrogate(cleaned[89]) ? 89 : 90;
         return cleaned[..cut].Trim();
+    }
+
+    public static string GetStrmServerBaseUrl(PluginConfiguration config)
+    {
+        if (!string.IsNullOrWhiteSpace(config.PublicServerUrl))
+        {
+            return config.PublicServerUrl.TrimEnd('/');
+        }
+
+        var published = Environment.GetEnvironmentVariable("JELLYFIN_PublishedServerUrl");
+        if (!string.IsNullOrWhiteSpace(published))
+        {
+            return published.TrimEnd('/');
+        }
+
+        return "http://127.0.0.1:8096";
     }
 
     public static List<YouTubeChannelItem> PrioritizeChannels(

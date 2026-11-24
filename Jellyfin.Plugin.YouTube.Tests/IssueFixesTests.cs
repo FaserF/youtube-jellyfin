@@ -177,4 +177,16 @@ public class IssueFixesTests
         unlimited.Should().HaveCount(4);
         unlimited[0].ChannelId.Should().Be("UC4");
     }
+
+    [Fact]
+    public void GetStrmServerBaseUrl_ShouldPreferPublicServerUrl_AndFallbackToLoopback()
+    {
+        var configWithPublic = new PluginConfiguration { PublicServerUrl = "https://jellyfin.example.com/" };
+        Jellyfin.Plugin.YouTube.ScheduledTasks.SyncYouTubeStrmTask.GetStrmServerBaseUrl(configWithPublic)
+            .Should().Be("https://jellyfin.example.com");
+
+        var configDefault = new PluginConfiguration { PublicServerUrl = string.Empty };
+        var url = Jellyfin.Plugin.YouTube.ScheduledTasks.SyncYouTubeStrmTask.GetStrmServerBaseUrl(configDefault);
+        url.Should().NotBeNullOrWhiteSpace();
+    }
 }

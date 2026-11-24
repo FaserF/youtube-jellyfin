@@ -157,6 +157,10 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             var audioCount = audioStreams.Count;
             var (subtitleStreams, defaultSubStreamIndex) = BuildSubtitleStreams(streamInfo, prefLang, videoId, internalBaseUrl, 1 + audioCount);
 
+            var hasHls = !string.IsNullOrWhiteSpace(streamInfo?.HlsManifestUrl);
+            var streamEndpoint = hasHls ? "master.m3u8" : "play";
+            var streamContainer = hasHls ? "m3u8" : "mp4";
+
             // C: One MediaSourceInfo per available resolution (sorted highest first)
             var allSources = new List<MediaSourceInfo>();
             if (streamInfo?.VideoFormats is { Count: > 0 } videoFormats)
@@ -184,8 +188,8 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     streams.AddRange(subtitleStreams);
 
                     var streamUrl = isTrailer
-                        ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true"
-                        : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+                        ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/{streamEndpoint}?isTrailer=true"
+                        : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/{streamEndpoint}";
 
                     allSources.Add(new MediaSourceInfo
                     {
@@ -193,7 +197,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                         Name = isTrailer ? $"{item.Name} (Trailer - {fmt.Label})" : $"{item.Name} ({fmt.Label})",
                         Path = streamUrl,
                         Protocol = MediaProtocol.Http,
-                        Container = "m3u8",
+                        Container = streamContainer,
                         IsRemote = true,
                         SupportsDirectPlay = true,
                         SupportsDirectStream = true,
@@ -231,8 +235,8 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                 streams.AddRange(subtitleStreams);
 
                 var fallbackUrl = isTrailer
-                    ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true"
-                    : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8";
+                    ? $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/{streamEndpoint}?isTrailer=true"
+                    : $"{internalBaseUrl}/api/youtubePlugin/stream/{videoId}/{streamEndpoint}";
 
                 allSources.Add(new MediaSourceInfo
                 {
@@ -240,7 +244,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
                     Name = isTrailer ? $"{item.Name} (Trailer - {height}p)" : $"{item.Name} ({height}p Ad-Free)",
                     Path = fallbackUrl,
                     Protocol = MediaProtocol.Http,
-                    Container = "m3u8",
+                    Container = streamContainer,
                     IsRemote = true,
                     SupportsDirectPlay = true,
                     SupportsDirectStream = true,

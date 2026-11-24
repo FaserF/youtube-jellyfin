@@ -140,7 +140,7 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                                         {
                                             ytSource.Container = (!string.IsNullOrWhiteSpace(ytSource.Path) && ytSource.Path.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
                                                 ? "m4a"
-                                                : "m3u8";
+                                                : ((!string.IsNullOrWhiteSpace(ytSource.Path) && ytSource.Path.Contains("/play", StringComparison.OrdinalIgnoreCase)) ? "mp4" : "m3u8");
                                         }
                                     }
 
