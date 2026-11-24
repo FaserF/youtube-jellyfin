@@ -45,12 +45,12 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
         };
     }
 
-    public Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
+    public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
     {
         var list = new List<RemoteImageInfo>();
         if (!Config.FetchThumbnails)
         {
-            return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
+            return list;
         }
 
         if (item is Episode or Movie or Audio or MusicVideo)
@@ -59,6 +59,21 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                 ?? YouTubeIdKeys.ExtractVideoIdFromPath(item.Path);
             if (!string.IsNullOrWhiteSpace(videoId))
             {
+                if (Config.EnableDeArrow && item is Episode or Movie)
+                {
+                    using var client = CreateClient();
+                    var deArrow = await client.GetDeArrowBrandingAsync(videoId, cancellationToken).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(deArrow?.ThumbnailUrl))
+                    {
+                        list.Add(new RemoteImageInfo
+                        {
+                            ProviderName = $"{Name} (DeArrow)",
+                            Type = ImageType.Primary,
+                            Url = deArrow.ThumbnailUrl
+                        });
+                    }
+                }
+
                 list.Add(new RemoteImageInfo
                 {
                     ProviderName = Name,
@@ -76,7 +91,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
                 }
             }
 
-            return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
+            return list;
         }
 
         // For Series / Season: use the first video's thumbnail in the folder immediately (zero API quota, 100% reliable)
@@ -111,7 +126,7 @@ public class YouTubeImageProvider : IRemoteImageProvider, IHasOrder
             }
         }
 
-        return Task.FromResult<IEnumerable<RemoteImageInfo>>(list);
+        return list;
     }
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken) =>

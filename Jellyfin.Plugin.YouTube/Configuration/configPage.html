@@ -119,6 +119,15 @@
                             <div class="checkboxContainer">
                                 <label class="emby-checkbox-label"><input id="chkEnableSponsorBlock" type="checkbox" is="emby-checkbox" /><span>Enable SponsorBlock Server-Side Auto-Skip</span></label>
                             </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableDeArrow" type="checkbox" is="emby-checkbox" /><span>Enable DeArrow Anti-Clickbait Titles &amp; Thumbnails</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkDeArrowPreserveOriginal" type="checkbox" is="emby-checkbox" /><span>Preserve Original Title in OriginalTitle Field</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableMostReplayed" type="checkbox" is="emby-checkbox" /><span>Add "Most Replayed" &amp; Highlight Timeline Chapters</span></label>
+                            </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="txtSponsorBlockCategories">SponsorBlock Categories</label>
                                 <input id="txtSponsorBlockCategories" type="text" is="emby-input" />
@@ -173,6 +182,13 @@
                             <div class="inputContainer">
                                 <label class="inputLabel" for="txtPriorityChannels">Priority / Favorite Channels (comma-separated names or UC... IDs)</label>
                                 <input id="txtPriorityChannels" type="text" is="emby-input" />
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkHideShorts" type="checkbox" is="emby-checkbox" /><span>Hide YouTube Shorts (&le; 60s / #shorts)</span></label>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtBlockedChannels">Blocked Channels (comma-separated names or UC... IDs)</label>
+                                <input id="txtBlockedChannels" type="text" is="emby-input" />
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="txtPrimaryUser">Primary Jellyfin Username</label>
@@ -433,6 +449,9 @@
                         document.getElementById("chkEnableStreamingChannel").checked = config.EnableStreamingChannel === true;
                         document.getElementById("chkEnablePublicFallback").checked = config.EnablePublicFallbackForUnlinkedUsers !== false;
                         document.getElementById("chkEnableSponsorBlock").checked = config.EnableSponsorBlock !== false;
+                        document.getElementById("chkEnableDeArrow").checked = config.EnableDeArrow !== false;
+                        document.getElementById("chkDeArrowPreserveOriginal").checked = config.DeArrowPreserveOriginalTitle !== false;
+                        document.getElementById("chkEnableMostReplayed").checked = config.EnableMostReplayedChapter !== false;
                         document.getElementById("txtSponsorBlockCategories").value = config.SponsorBlockCategories || "sponsor,selfpromo,interaction,intro,outro";
                         document.getElementById("chkEnableRyd").checked = config.EnableReturnYouTubeDislike !== false;
                         document.getElementById("chkEnableFavLike").checked = config.EnableFavoriteToLikeSync !== false;
@@ -446,6 +465,8 @@
                         document.getElementById("txtVideosPerChannel").value = String(config.VideosPerSubscribedChannel || 15);
                         document.getElementById("txtMaxWatchLaterVideos").value = String(config.MaxWatchLaterVideos ?? 50);
                         document.getElementById("txtPriorityChannels").value = config.PriorityChannels || "";
+                        document.getElementById("chkHideShorts").checked = config.HideYouTubeShorts !== false;
+                        document.getElementById("txtBlockedChannels").value = config.BlockedChannels || "";
                         document.getElementById("chkEnableYtm").checked = config.EnableYouTubeMusic !== false;
                         document.getElementById("chkEnableYtmChannel").checked = config.EnableYouTubeMusicChannel !== false;
                         document.getElementById("chkEnableYtmLibrary").checked = config.EnableYouTubeMusicLibrary !== false;
@@ -538,6 +559,9 @@
                         config.EnableStreamingChannel = document.getElementById("chkEnableStreamingChannel").checked;
                         config.EnablePublicFallbackForUnlinkedUsers = document.getElementById("chkEnablePublicFallback").checked;
                         config.EnableSponsorBlock = document.getElementById("chkEnableSponsorBlock").checked;
+                        config.EnableDeArrow = document.getElementById("chkEnableDeArrow").checked;
+                        config.DeArrowPreserveOriginalTitle = document.getElementById("chkDeArrowPreserveOriginal").checked;
+                        config.EnableMostReplayedChapter = document.getElementById("chkEnableMostReplayed").checked;
                         config.SponsorBlockCategories = document.getElementById("txtSponsorBlockCategories").value.trim();
                         config.EnableReturnYouTubeDislike = document.getElementById("chkEnableRyd").checked;
                         config.EnableFavoriteToLikeSync = document.getElementById("chkEnableFavLike").checked;
@@ -553,6 +577,8 @@
                         var maxWlVal = parseInt(document.getElementById("txtMaxWatchLaterVideos").value, 10);
                         config.MaxWatchLaterVideos = isNaN(maxWlVal) || maxWlVal < 0 ? 0 : maxWlVal;
                         config.PriorityChannels = document.getElementById("txtPriorityChannels").value.trim();
+                        config.HideYouTubeShorts = document.getElementById("chkHideShorts").checked;
+                        config.BlockedChannels = document.getElementById("txtBlockedChannels").value.trim();
                         config.EnableStrmSync = document.getElementById("chkEnableYouTubeLibrary").checked;
                         config.EnableYouTubeMusic = document.getElementById("chkEnableYtm").checked;
                         config.EnableYouTubeMusicChannel = document.getElementById("chkEnableYtmChannel").checked;

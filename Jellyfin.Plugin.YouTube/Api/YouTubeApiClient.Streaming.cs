@@ -128,6 +128,8 @@ public partial class YouTubeApiClient
                     }
                 }
 
+                info.HeatmapPeak = ParseHeatmapPeak(root);
+
                 var maxHeight = config.PreferredMaxResolution > 0 ? config.PreferredMaxResolution : 2160;
                 var prefLang = (config.PreferredLanguage ?? "de").Split('-')[0];
                 string? bestHlsManifest = null;

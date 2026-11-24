@@ -144,6 +144,7 @@ public sealed class YouTubeSearchProvider : IInternalSearchProvider
 
             var userId = query.UserId is Guid uid && uid != Guid.Empty ? uid.ToString("N") : null;
             var videos = await client.SearchVideosAsync(cleanTerm, userId, config.YtSearchMaxResults, cancellationToken).ConfigureAwait(false);
+            videos = YouTubeApiClient.FilterVideos(videos, config);
 
             // Convert results: YouTube search results are virtual (non-local).
             // We return them as SearchResult with a virtual/negative score so they

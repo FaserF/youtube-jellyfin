@@ -338,9 +338,38 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             _ => "FEwhat_to_watch"
         };
 
-        var feedVideos = await client.GetBrowseFeedAsync(browseId, effectiveUserKey, 30, cancellationToken).ConfigureAwait(false);
+        var feedVideos = await client.GetBrowseFeedAsync(browseId, effectiveUserKey, 50, cancellationToken).ConfigureAwait(false);
         var feedItems = await EnrichAndMapVideosAsync(client, feedVideos, cancellationToken).ConfigureAwait(false);
+        feedItems = ApplySortAndPaging(feedItems, query);
         return new ChannelItemResult { Items = feedItems, TotalRecordCount = feedItems.Count };
+    }
+
+    private static List<ChannelItemInfo> ApplySortAndPaging(List<ChannelItemInfo> items, InternalChannelItemQuery query)
+    {
+        IEnumerable<ChannelItemInfo> ordered = query.SortBy switch
+        {
+            ChannelItemSortField.Name =>
+                query.SortDescending ? items.OrderByDescending(i => i.Name) : items.OrderBy(i => i.Name),
+            ChannelItemSortField.PremiereDate or ChannelItemSortField.DateCreated =>
+                query.SortDescending ? items.OrderByDescending(i => i.PremiereDate ?? DateTime.MinValue) : items.OrderBy(i => i.PremiereDate ?? DateTime.MinValue),
+            ChannelItemSortField.CommunityRating =>
+                query.SortDescending ? items.OrderByDescending(i => i.CommunityRating ?? 0f) : items.OrderBy(i => i.CommunityRating ?? 0f),
+            ChannelItemSortField.Runtime =>
+                query.SortDescending ? items.OrderByDescending(i => i.RunTimeTicks ?? 0L) : items.OrderBy(i => i.RunTimeTicks ?? 0L),
+            _ => items
+        };
+
+        if (query.StartIndex is int start && start > 0)
+        {
+            ordered = ordered.Skip(start);
+        }
+
+        if (query.Limit is int limit && limit > 0)
+        {
+            ordered = ordered.Take(limit);
+        }
+
+        return ordered.ToList();
     }
 
     private async Task<List<ChannelItemInfo>> EnrichAndMapVideosAsync(
@@ -350,12 +379,27 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
     {
         var list = new List<ChannelItemInfo>();
         var config = Config;
+        videos = YouTubeApiClient.FilterVideos(videos, config);
 
         var enrichTargets = videos.Take(12).ToList();
-        if (config.EnableReturnYouTubeDislike || config.EnableSponsorBlock)
+        if (config.EnableReturnYouTubeDislike || config.EnableSponsorBlock || config.EnableDeArrow)
         {
             var tasks = enrichTargets.Select(async v =>
             {
+                if (config.EnableDeArrow)
+                {
+                    var deArrow = await client.GetDeArrowBrandingAsync(v.VideoId, cancellationToken).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(deArrow?.Title))
+                    {
+                        v.Title = deArrow.Title;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(deArrow?.ThumbnailUrl))
+                    {
+                        v.ThumbnailUrl = deArrow.ThumbnailUrl;
+                    }
+                }
+
                 if (config.EnableReturnYouTubeDislike && v.DislikeStats == null)
                 {
                     v.DislikeStats = await client.GetReturnYouTubeDislikeAsync(v.VideoId, cancellationToken).ConfigureAwait(false);

@@ -63,6 +63,7 @@ Standard YouTube plugins for Jellyfin typically rely on downloading gigabytes of
 **`Jellyfin.Plugin.YouTube`** is engineered from the ground up on the same architectural standard as [`crunchyroll-jellyfin`](https://github.com/FaserF/crunchyroll-jellyfin) to serve as a **complete 1:1 replacement for SmartTube (Android TV) and YouTube Music**:
 
 - **Zero Disk Footprint:** Videos and music tracks are represented as lightweight `<100 byte` `.strm` pointer files and live Channel items. Media streams are resolved on-demand at playback time.
+- **Native SmartTube Parity in Jellyfin 12.x:** Includes **DeArrow** anti-clickbait titles & neutral thumbnails, **YouTube Shorts** & **Channel Blocklist** filtering, **SponsorBlock** skip segments (`MediaSegments`) + `poi_highlight` & **"Most Replayed" heatmap** timeline chapters, and native **Creator `PersonInfo` / Studios / Genres / Tags / RYD Rating** mapping across all Jellyfin clients.
 - **100% Native Jellyfin UI Utilization:** Every tab inside Jellyfin's **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries is meaningfully populated — including **Shows**, **Suggestions**, **Upcoming**, **Playlists**, **Collections**, **Artists**, **Albums**, and **Songs**.
 - **True Multi-User Isolation with Seamless Fallback:**
   - The configured primary Jellyfin user (default: `fabian`) is automatically linked to the primary Google/YouTube OAuth 2.0 account via an embedded/persisted seed token (`fabian_oauth_seed.json`).

@@ -67,6 +67,7 @@ public class YouTubeStreamInfoDto
     public List<YouTubeAudioTrackDto> AudioTracks { get; set; } = new();
     public List<SponsorBlockSegmentDto> SponsorSegments { get; set; } = new();
     public List<YouTubeChapterDto> Chapters { get; set; } = new();
+    public YouTubeHeatmapPeakDto? HeatmapPeak { get; set; }
     public ReturnYouTubeDislikeDto? DislikeStats { get; set; }
 
     /// <summary>YouTube video tags (used as Jellyfin tags/genres).</summary>
@@ -100,6 +101,20 @@ public class YouTubeChapterDto
     public string Title { get; set; } = string.Empty;
     public double StartSeconds { get; set; }
     public double EndSeconds { get; set; }
+}
+
+public class YouTubeHeatmapPeakDto
+{
+    public double StartSeconds { get; set; }
+    public double EndSeconds { get; set; }
+    public double Intensity { get; set; }
+}
+
+public class DeArrowBrandingDto
+{
+    public string? Title { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public double? ThumbnailTimestamp { get; set; }
 }
 
 public class YouTubeAudioTrackDto

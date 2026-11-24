@@ -340,6 +340,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
         CancellationToken cancellationToken,
         bool skipPrune = false)
     {
+        videos = Api.YouTubeApiClient.FilterVideos(videos, config);
         var added = 0;
         var activePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

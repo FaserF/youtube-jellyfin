@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers.LocalMetadata;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Providers;
@@ -121,9 +122,26 @@ public class YouTubeMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>, I
             rating = (float)Math.Round((double)meta.DislikeStats.Likes / (meta.DislikeStats.Likes + meta.DislikeStats.Dislikes) * 10.0, 1);
         }
 
+        var displayTitle = meta.Title;
+        string? originalTitle = null;
+        if (config.EnableDeArrow)
+        {
+            var deArrow = await client.GetDeArrowBrandingAsync(videoId, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(deArrow?.Title))
+            {
+                if (config.DeArrowPreserveOriginalTitle)
+                {
+                    originalTitle = meta.Title;
+                }
+
+                displayTitle = deArrow.Title;
+            }
+        }
+
         var movie = new Movie
         {
-            Name = meta.Title,
+            Name = displayTitle,
+            OriginalTitle = originalTitle,
             Overview = YouTubeApiClient.FormatRichOverview(meta, meta.DislikeStats, meta.SponsorSegments),
             PremiereDate = meta.PublishedAt,
             ProductionYear = meta.PublishedAt?.Year,
@@ -134,7 +152,14 @@ public class YouTubeMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>, I
         if (!string.IsNullOrWhiteSpace(meta.ChannelTitle))
         {
             movie.AddStudio(meta.ChannelTitle);
+            result.AddPerson(new PersonInfo
+            {
+                Name = meta.ChannelTitle,
+                Type = Jellyfin.Data.Enums.PersonKind.Director
+            });
         }
+
+        movie.AddGenre("YouTube");
 
         YouTubeIdKeys.SetMovieId(movie, videoId);
         result.Item = movie;

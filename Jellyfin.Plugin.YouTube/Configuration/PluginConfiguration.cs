@@ -73,6 +73,11 @@ public class PluginConfiguration : BasePluginConfiguration
         VideosPerSubscribedChannel = 15;
         MaxWatchLaterVideos = 50;
         PriorityChannels = string.Empty;
+        EnableDeArrow = true;
+        DeArrowPreserveOriginalTitle = true;
+        HideYouTubeShorts = true;
+        BlockedChannels = string.Empty;
+        EnableMostReplayedChapter = true;
         UserAccounts = new List<YouTubeUserAccountEntry>();
     }
 
@@ -143,6 +148,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public int VideosPerSubscribedChannel { get; set; }
     public int MaxWatchLaterVideos { get; set; }
     public string PriorityChannels { get; set; }
+    public bool EnableDeArrow { get; set; }
+    public bool DeArrowPreserveOriginalTitle { get; set; }
+    public bool HideYouTubeShorts { get; set; }
+    public string BlockedChannels { get; set; }
+    public bool EnableMostReplayedChapter { get; set; }
     public List<YouTubeUserAccountEntry> UserAccounts { get; set; }
 
     public YouTubeUserAccountEntry? GetAccountForUser(string? usernameOrId)

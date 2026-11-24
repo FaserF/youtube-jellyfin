@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Providers.LocalMetadata;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -174,9 +175,27 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         var premiereDate = publishedAt ?? DateTime.UtcNow.Date;
         var overview = richDescription ?? $"👤 {channelFromTitle}  •  🔗 https://www.youtube.com/watch?v={videoId}\n\nYouTube Ad-Free Stream ({videoId})";
 
+        var displayTitle = cleanTitle;
+        string? originalTitle = null;
+        if (config.EnableDeArrow)
+        {
+            using var deArrowClient = CreateClient();
+            var deArrow = await deArrowClient.GetDeArrowBrandingAsync(videoId, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(deArrow?.Title))
+            {
+                if (config.DeArrowPreserveOriginalTitle)
+                {
+                    originalTitle = cleanTitle;
+                }
+
+                displayTitle = deArrow.Title;
+            }
+        }
+
         var episode = new Episode
         {
-            Name = cleanTitle,
+            Name = displayTitle,
+            OriginalTitle = originalTitle,
             Overview = overview,
             IndexNumber = parsedEpNum,
             ParentIndexNumber = parsedSeasonNum,
@@ -185,10 +204,15 @@ public class YouTubeEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
             CommunityRating = communityRating
         };
 
-        // F: Map YT channel → Jellyfin Studio
+        // F: Map YT channel → Jellyfin Studio & Creator PersonInfo
         if (!string.IsNullOrWhiteSpace(channelFromTitle))
         {
             episode.AddStudio(channelFromTitle);
+            result.AddPerson(new PersonInfo
+            {
+                Name = channelFromTitle,
+                Type = Jellyfin.Data.Enums.PersonKind.Director
+            });
         }
 
         // F: Map YT category → Genre

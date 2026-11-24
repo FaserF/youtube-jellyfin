@@ -89,9 +89,22 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
             var streamInfo = await streamInfoTask.ConfigureAwait(false);
             var sbSegments = await sbTask.ConfigureAwait(false);
 
-            // 1. Map SponsorBlock segments to Jellyfin MediaSegments (Intro, Outro, Commercial)
+            var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+            var highlightChapters = new List<ChapterInfo>();
+
+            // 1. Map SponsorBlock segments to Jellyfin MediaSegments (Intro, Outro, Commercial) & poi_highlight Chapters
             foreach (var sb in sbSegments)
             {
+                if (string.Equals(sb.Category, "poi_highlight", StringComparison.OrdinalIgnoreCase))
+                {
+                    highlightChapters.Add(new ChapterInfo
+                    {
+                        Name = "🔥 Highlight",
+                        StartPositionTicks = TimeSpan.FromSeconds(sb.StartSeconds).Ticks
+                    });
+                    continue;
+                }
+
                 if (sb.EndSeconds <= sb.StartSeconds)
                 {
                     continue;
@@ -171,12 +184,23 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
                 }
             }
 
+            // Add SponsorBlock poi_highlight & YouTube Most Replayed heatmap peak as native chapters
+            chaptersList.AddRange(highlightChapters);
+            if (config.EnableMostReplayedChapter && streamInfo?.HeatmapPeak != null)
+            {
+                chaptersList.Add(new ChapterInfo
+                {
+                    Name = "🔥 Most Replayed",
+                    StartPositionTicks = TimeSpan.FromSeconds(streamInfo.HeatmapPeak.StartSeconds).Ticks
+                });
+            }
+
             // Save chapters into Jellyfin so timeline scrub markers are rendered
             if (chaptersList.Count > 0 && _chapterManager.Supports(item))
             {
                 try
                 {
-                    _chapterManager.SaveChapters(item, chaptersList);
+                    _chapterManager.SaveChapters(item, chaptersList.OrderBy(c => c.StartPositionTicks).ToList());
                 }
                 catch (Exception ex)
                 {
@@ -210,6 +234,7 @@ public class YouTubeMediaSegmentProvider : IMediaSegmentProvider
             "music_offtopic" => MediaSegmentType.Commercial,
             "preview" => MediaSegmentType.Preview,
             "recap" => MediaSegmentType.Recap,
+            "filler" => MediaSegmentType.Recap,
             _ => MediaSegmentType.Commercial
         };
 }
