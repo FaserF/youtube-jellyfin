@@ -1,4 +1,10 @@
-import datetime, json, os, re, subprocess, sys, urllib.request
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
 
 repo = os.environ.get("REPO_NAME", "")
 token = os.environ.get("BOT_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
@@ -183,9 +189,9 @@ if not is_private:
     for hf in history_findings[:10]:
         issue_body += f"- **`{hf['type']}`** in commit `{hf['commit'][:8]}` (`{hf['file']}`) — *Targeted Redaction*\n"
     issue_body += (
-        f"\n> [!IMPORTANT]\n"
-        f"> Even though the credentials were sanitized in code, **any credential that was ever published must be considered compromised**.\n"
-        f"> Please revoke and rotate these keys at their respective providers immediately.\n"
+        "\n> [!IMPORTANT]\n"
+        "> Even though the credentials were sanitized in code, **any credential that was ever published must be considered compromised**.\n"
+        "> Please revoke and rotate these keys at their respective providers immediately.\n"
     )
     try:
         req = urllib.request.Request(
@@ -221,13 +227,13 @@ else:
         pr_body += f"| `{hf['type']}` | Git History | `{hf['file']}` (`{hf['commit'][:8]}`) | `{hf['secret_preview']}` |\n"
 
     pr_body += (
-        f"\n### ⚡ Applied Remediations:\n"
-        f"- Replaced plaintext credentials with safe environment variable references.\n"
-        f"- Enforced `.env` and `.env.local` exclusion in `.gitignore`.\n"
-        f"- Prepared commit history for targeted secret purging.\n\n"
-        f"> [!CAUTION]\n"
-        f"> **Mandatory Credential Rotation:** Neutralizing secrets in code does NOT revoke them at the provider.\n"
-        f"> Check the table above and immediately rotate any live tokens or passwords.\n"
+        "\n### ⚡ Applied Remediations:\n"
+        "- Replaced plaintext credentials with safe environment variable references.\n"
+        "- Enforced `.env` and `.env.local` exclusion in `.gitignore`.\n"
+        "- Prepared commit history for targeted secret purging.\n\n"
+        "> [!CAUTION]\n"
+        "> **Mandatory Credential Rotation:** Neutralizing secrets in code does NOT revoke them at the provider.\n"
+        "> Check the table above and immediately rotate any live tokens or passwords.\n"
     )
 
     try:

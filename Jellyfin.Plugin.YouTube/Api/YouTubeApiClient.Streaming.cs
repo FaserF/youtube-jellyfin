@@ -450,7 +450,7 @@ public partial class YouTubeApiClient
         catch (OperationCanceledException)
         {
             try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
-            throw;
+            return null;
         }
 
         var stdout = await stdoutTask.ConfigureAwait(false);
