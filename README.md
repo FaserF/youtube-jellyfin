@@ -32,7 +32,7 @@
 1. [Overview & Core Philosophy](#-overview--core-philosophy)
 2. [System Architecture](#-system-architecture)
 3. [Key Features Breakdown](#-key-features-breakdown)
-   - [1. 1:1 SmartTube Video Experience (Native Library + Channel)](#1-11-smarttube-video-experience-native-library--channel)
+   - [1. Native YouTube Video Experience (Library + Channel)](#1-native-youtube-video-experience-library--channel)
    - [2. Native Jellyfin Library Tabs Mapping (`Shows`, `Suggestions`, `Upcoming`, `Playlists`, `Collections`)](#2-native-jellyfin-library-tabs-mapping-shows-suggestions-upcoming-playlists-collections)
    - [3. Full YouTube Music Integration (Audio Library, Channel, Playlists & Web Player)](#3-full-youtube-music-integration-audio-library-channel-playlists--web-player)
    - [4. Multi-User OAuth 2.0 TV Device Code Auth & Access Control](#4-multi-user-oauth-20-tv-device-code-auth--access-control)
@@ -60,10 +60,10 @@
 
 Standard YouTube plugins for Jellyfin typically rely on downloading gigabytes of video files to disk or provide barebones channel folders that fail to populate native Jellyfin library views.
 
-**`Jellyfin.Plugin.YouTube`** is engineered from the ground up on the same architectural standard as [`crunchyroll-jellyfin`](https://github.com/FaserF/crunchyroll-jellyfin) to serve as a **complete 1:1 replacement for SmartTube (Android TV) and YouTube Music**:
+**`Jellyfin.Plugin.YouTube`** is engineered from the ground up on the same architectural standard as [`crunchyroll-jellyfin`](https://github.com/FaserF/crunchyroll-jellyfin) to serve as a **complete native YouTube and YouTube Music integration for Jellyfin**:
 
 - **Zero Disk Footprint:** Videos and music tracks are represented as lightweight `<100 byte` `.strm` pointer files and live Channel items. Media streams are resolved on-demand at playback time.
-- **Native SmartTube Parity in Jellyfin 12.x:** Includes **DeArrow** anti-clickbait titles & neutral thumbnails, **YouTube Shorts** & **Channel Blocklist** filtering, **SponsorBlock** skip segments (`MediaSegments`) + `poi_highlight` & **"Most Replayed" heatmap** timeline chapters, and native **Creator `PersonInfo` / Studios / Genres / Tags / RYD Rating** mapping across all Jellyfin clients.
+- **Native YouTube Features in Jellyfin 12.x:** Includes **DeArrow** anti-clickbait titles & neutral thumbnails, **YouTube Shorts** & **Channel Blocklist** filtering, **SponsorBlock** skip segments (`MediaSegments`) + `poi_highlight` & **"Most Replayed" heatmap** timeline chapters, and native **Creator `PersonInfo` / Studios / Genres / Tags / RYD Rating** mapping across all Jellyfin clients.
 - **100% Native Jellyfin UI Utilization:** Every tab inside Jellyfin's **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries is meaningfully populated — including **Shows**, **Suggestions**, **Upcoming**, **Playlists**, **Collections**, **Artists**, **Albums**, and **Songs**.
 - **True Multi-User Isolation with Seamless Fallback:**
   - The configured primary Jellyfin user (default: `fabian`) is automatically linked to the primary Google/YouTube OAuth 2.0 account via an embedded/persisted seed token (`fabian_oauth_seed.json`).
@@ -86,7 +86,7 @@ flowchart TD
         STARTUP["🚀 YouTubeStartupService\nAuto-Provisions Libraries, Seeds OAuth, Injects JS"]
         CTRL["🔌 YouTubePluginController\n(/api/youtubePlugin/*)"]
         MSP["🎞️ YouTubeMediaSourceProvider\n(Dynamic Video HLS & Audio M4A MediaSources)"]
-        CH_VID["📺 YouTubeChannel\n(SmartTube Live Categories + Search)"]
+        CH_VID["📺 YouTubeChannel\n(Live Categories + Search)"]
         CH_MUS["🎵 YouTubeMusicChannel\n(Dedicated Audio Channel)"]
         SYNC_STRM["⏱️ SyncYouTubeStrmTask\n(Video & Music .strm Generator)"]
         SYNC_PL["📋 YouTubePlaylistAndCollectionSyncService\n(Native Jellyfin Playlists & BoxSets)"]
@@ -117,19 +117,19 @@ flowchart TD
 
 ## 🚀 Key Features Breakdown
 
-### 1. 1:1 SmartTube Video Experience (Native Library + Channel)
+### 1. Native YouTube Video Experience (Library + Channel)
 
-The plugin automatically provisions a dedicated **YouTube** library (`CollectionType: tvshows`) and a **YouTube** channel, mirroring all 7 core SmartTube navigation categories plus all subscribed channels:
+The plugin automatically provisions a dedicated **YouTube** library (`CollectionType: tvshows`) and a **YouTube** channel, mirroring all 7 core YouTube navigation categories plus all subscribed channels:
 
 | Feed Folder / Category | Innertube / API Source | Description |
 | :--- | :--- | :--- |
-| **`01 - Home & Empfehlungen`** | `FEwhat_to_watch` | Personalized YouTube Home recommendations (or regional popular videos in anonymous mode). |
-| **`02 - Abo-Feed`** | `FEsubscriptions` | Chronological latest uploads from the user's subscribed YouTube channels. |
-| **`03 - Weiteransehen & Verlauf`** | `FEhistory` | Recently watched videos and resume candidates from YouTube Watch History. |
-| **`04 - Später ansehen (Watch Later)`** | `VLWL` | The user's personal YouTube *Watch Later* queue. |
-| **`05 - Videos, die ich mag (Liked)`** | `VLLV` / `myRating=like` | Videos liked by the user on YouTube (automatically synced with Jellyfin Favorites `♥️`). |
-| **`06 - Trends`** | `FEtrending` / `mostPopular` | Live trending videos for the configured `PreferredRegion` (e.g., `DE`, `US`). |
-| **`07 - Geplante Streams & Live (Upcoming)`** | `eventType=upcoming` + `live` | Upcoming scheduled premieres and active livestreams from subscribed channels (or regional live streams), set with future `PremiereDate` timestamps. |
+| **`01 - Home & Recommendations`** | `FEwhat_to_watch` | Personalized YouTube Home recommendations (or regional popular videos in anonymous mode). |
+| **`02 - Subscriptions Feed`** | `FEsubscriptions` | Chronological latest uploads from the user's subscribed YouTube channels. |
+| **`03 - Continue Watching & History`** | `FEhistory` | Recently watched videos and resume candidates from YouTube Watch History. |
+| **`04 - Watch Later`** | `VLWL` | The user's personal YouTube *Watch Later* queue. |
+| **`05 - Liked Videos`** | `VLLV` / `myRating=like` | Videos liked by the user on YouTube (automatically synced with Jellyfin Favorites `♥️`). |
+| **`06 - Trending`** | `FEtrending` / `mostPopular` | Live trending videos for the configured `PreferredRegion` (e.g., `DE`, `US`). |
+| **`07 - Upcoming Streams & Live`** | `eventType=upcoming` + `live` | Upcoming scheduled premieres and active livestreams from subscribed channels (or regional live streams), set with future `PremiereDate` timestamps. |
 | **`<Channel Name> [ytchannel_<UC...>]`** | `mine=true` + Channel Uploads | Up to 25 dedicated series folders for the user's subscribed YouTube channels, containing their latest uploads. |
 
 ---
@@ -140,12 +140,12 @@ Unlike basic `.strm` generators that leave Jellyfin's top navigation tabs empty,
 
 | Native Jellyfin Tab | How `Jellyfin.Plugin.YouTube` Populates It |
 | :--- | :--- |
-| **Shows (Serien)** | Displays all 7 SmartTube feed rows (`01`–`07`) and every subscribed YouTube channel as rich Series cards with high-resolution posters, descriptions, and deterministic `S01E{hash:D4}` episodes. |
-| **Suggestions (Empfehlungen)** | Automatically populated via recently added episodes, `01 - Home & Empfehlungen`, and partially watched `03 - Weiteransehen & Verlauf` progress markers so Jellyfin's *Continue Watching*, *Next Up*, and *Because You Watched* rows work natively. |
-| **Upcoming (Demnächst)** | Populated by `07 - Geplante Streams & Live (Upcoming)`. Scheduled livestreams and premieres are assigned future `PremiereDate` values (`DateTime.UtcNow + 1..14 days`) under `Season 1`, which Jellyfin's native `/Shows/Upcoming` query renders in calendar order. |
-| **Playlists (Wiedergabelisten)** | `YouTubePlaylistAndCollectionSyncService` automatically creates and updates native Jellyfin Video Playlists (`YouTube - Watch Later`, `YouTube - Liked Videos`, `YouTube - Subscriptions`, `YouTube - Home & Recommendations`, `YouTube - Trending`). |
-| **Collections (Sammlungen)** | Automatically bundles all SmartTube feed series into a **`YouTube SmartTube Feeds`** BoxSet and all subscribed creator channels into a **`YouTube Subscribed Channels`** BoxSet via Jellyfin's native `ICollectionManager`. |
-| **Episodes (Folgen)** | Direct flat view of all synced YouTube videos with full duration, premiere date, channel studio tag, and RYD community rating. |
+| **Shows** | Displays all 7 YouTube feed rows (`01`–`07`) and every subscribed YouTube channel as rich Series cards with high-resolution posters, descriptions, and deterministic `S01E{hash:D4}` episodes. |
+| **Suggestions** | Automatically populated via recently added episodes, `01 - Home & Recommendations`, and partially watched `03 - Continue Watching & History` progress markers so Jellyfin's *Continue Watching*, *Next Up*, and *Because You Watched* rows work natively. |
+| **Upcoming** | Populated by `07 - Upcoming Streams & Live`. Scheduled livestreams and premieres are assigned future `PremiereDate` values (`DateTime.UtcNow + 1..14 days`) under `Season 1`, which Jellyfin's native `/Shows/Upcoming` query renders in calendar order. |
+| **Playlists** | `YouTubePlaylistAndCollectionSyncService` automatically creates and updates native Jellyfin Video Playlists (`YouTube - Watch Later`, `YouTube - Liked Videos`, `YouTube - Subscriptions`, `YouTube - Home & Recommendations`, `YouTube - Trending`). |
+| **Collections** | Automatically bundles all YouTube feed series into a **`YouTube Feeds`** BoxSet and all subscribed creator channels into a **`YouTube Subscribed Channels`** BoxSet via Jellyfin's native `ICollectionManager`. |
+| **Episodes** | Direct flat view of all synced YouTube videos with full duration, premiere date, channel studio tag, and RYD community rating. |
 
 ---
 
@@ -165,8 +165,8 @@ YouTube Music support is **enabled by default (`EnableYouTubeMusic = true`)** an
      - **`YouTube Music - Listen Again`** (`FEhistory` Music Filtering)
 3. **Dedicated `YouTube Music` Channel (`YouTubeMusicChannel`):**
    - Exposes `🎵 Supermix & Music Home`, `❤️ Liked Songs`, `🕒 Recently Played Music`, `🔥 Trending & Charts`, and `📻 Subscribed Artists & Channels` for instant on-demand browsing without waiting for library scans.
-4. **SmartTube Embedded Category & Web UI Quick-Player:**
-   - Adds a `🎵 YouTube Music (Audio Streaming)` category inside the main SmartTube video channel.
+4. **Embedded YouTube Music Category & Web UI Quick-Player:**
+   - Adds a `🎵 YouTube Music (Audio Streaming)` category inside the main YouTube video channel.
    - Injects a YouTube Music browser & bottom audio player bar into the Jellyfin Web UI (`youtubePlugin.js`) with an on-demand **Sync Music Library** button.
 
 ---
@@ -191,7 +191,7 @@ flowchart LR
   - If no token is stored in `YouTube.xml` yet, it loads the persisted token from `/config/data/youtube-plugin/fabian_oauth_seed.json` (or the embedded resource `Jellyfin.Plugin.YouTube.Configuration.fabian_oauth_seed.json`) and binds it exclusively to `fabian`.
   - Whenever tokens are refreshed, `fabian_oauth_seed.json` is updated on disk so credentials survive plugin rebuilds or configuration resets.
 - **Self-Service Per-User Linking (Any Jellyfin User):**
-  - Every Jellyfin user can open the **YouTube SmartTube Overlay** in Jellyfin Web (or the Admin Dashboard) and click **Connect My YouTube Account**.
+  - Every Jellyfin user can open the **YouTube Hub Overlay** in Jellyfin Web (or the Admin Dashboard) and click **Connect My YouTube Account**.
   - The plugin initiates a Google OAuth 2.0 TV Device Code session (`https://www.google.com/device`), displays the 8-character `user_code`, and polls in the background until the user authorizes their Google account.
   - Each user's `AccessToken` and `RefreshToken` are stored separately in `PluginConfiguration.UserAccounts` keyed by `JellyfinUserId`.
 - **Configurable Unlinked User Behavior (`EnablePublicFallbackForUnlinkedUsers`):**
@@ -264,13 +264,13 @@ For users who archive downloaded YouTube videos, creator channels, or music vide
 
 ## ⚙️ Complete Configuration Reference (`PluginConfiguration`)
 
-All settings can be configured in the Jellyfin Dashboard under **Dashboard → Plugins → YouTube (SmartTube & Music)** or in `/config/plugins/configurations/Jellyfin.Plugin.YouTube.xml`.
+All settings can be configured in the Jellyfin Dashboard under **Dashboard → Plugins → YouTube** or in `/config/plugins/configurations/Jellyfin.Plugin.YouTube.xml`.
 
 ### General, Authentication & Multi-User Access Settings
 
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
-| **`EnableStreamingChannel`** | `bool` | `true` | Enables the native **YouTube** SmartTube Channel in Jellyfin's *Channels* section (`YouTubeChannel`). |
+| **`EnableStreamingChannel`** | `bool` | `true` | Enables the native **YouTube** Channel in Jellyfin's *Channels* section (`YouTubeChannel`). |
 | **`PrimaryJellyfinUser`** | `string` | `"fabian"` | Username of the primary Jellyfin user (case-insensitive). This user automatically receives the seeded/persisted primary YouTube OAuth account (`fabian_oauth_seed.json`) and serves as the account source for background `.strm` library synchronization. |
 | **`PrimaryJellyfinUserId`** | `string` | `"c24de2a9fe3644569746e53b80490646"` | Optional explicit Jellyfin User GUID for the primary user. Automatically updated by `YouTubeStartupService` when resolving `PrimaryJellyfinUser`. |
 | **`EnablePublicFallbackForUnlinkedUsers`** | `bool` | `true` | Controls access for Jellyfin users who have **not** linked their own YouTube account and are not the `PrimaryJellyfinUser` (`fabian`):<br>• **`true` (Default):** Unlinked users receive Public/Anonymous YouTube & YouTube Music feeds (regional Trending, Music Charts, Search) and can self-link their own Google account via TV Device Code in the UI.<br>• **`false` (Exclusive Mode):** Unlinked users are blocked from browsing YouTube/YouTube Music until they link a personal Google account. |
@@ -304,7 +304,7 @@ All settings can be configured in the Jellyfin Dashboard under **Dashboard → P
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
 | **`EnableYouTubeLibrary`** | `bool` | `true` | Automatically creates and maintains the dedicated **YouTube** Virtual Folder library (`CollectionType: tvshows`) in Jellyfin on startup. |
-| **`EnableStrmSync`** | `bool` | `true` | Enables the scheduled task (`SyncYouTubeStrmTask`) that materializes SmartTube feeds (`01`–`07`) and subscribed channels as `.strm` files on disk and syncs native Jellyfin Video Playlists & Collections. |
+| **`EnableStrmSync`** | `bool` | `true` | Enables the scheduled task (`SyncYouTubeStrmTask`) that materializes YouTube feeds (`01`–`07`) and subscribed channels as `.strm` files on disk and syncs native Jellyfin Video Playlists & Collections. |
 | **`StrmLibraryPath`** | `string` | `"/data/youtube"` | Absolute container/host filesystem path where YouTube video `.strm` files and `metadata.json` caches are written. |
 | **`EnableMovieSupport`** | `bool` | `true` | Enables `YouTubeMovieProvider` for standalone long-form YouTube films, documentaries, or Movies library items containing `[ytvideo_<id>]`. |
 | **`EnableMusicVideoSupport`** | `bool` | `true` | Enables `YouTubeMusicVideoProvider` and metadata providers for Jellyfin libraries configured with the native **Music Videos** collection type. |
@@ -318,7 +318,7 @@ All settings can be configured in the Jellyfin Dashboard under **Dashboard → P
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
 | **`EnableYouTubeMusic`** | `bool` | `true` | Master switch for **YouTube Music** integration across the entire plugin (Channel, Music Library, Audio `.strm` extraction, Audio Playlists, and Web UI Music tab). |
-| **`EnableYouTubeMusicChannel`** | `bool` | `true` | Enables the dedicated **YouTube Music** channel (`YouTubeMusicChannel`) and the `🎵 YouTube Music` category inside the SmartTube channel. |
+| **`EnableYouTubeMusicChannel`** | `bool` | `true` | Enables the dedicated **YouTube Music** channel (`YouTubeMusicChannel`) and the `🎵 YouTube Music` category inside the YouTube channel. |
 | **`EnableYouTubeMusicLibrary`** | `bool` | `true` | Automatically provisions the dedicated **YouTube Music** native audio library (`CollectionType: music`) in Jellyfin and writes `.strm` audio files (`audio.m4a`) during `SyncYouTubeStrmTask`. |
 | **`EnableYouTubeMusicPlaylistsSync`** | `bool` | `true` | Automatically creates and updates native Jellyfin **Audio Playlists** (`YouTube Music - Supermix & Charts`, `YouTube Music - Liked Songs`, `YouTube Music - Listen Again`) so they appear in Jellyfin's **Playlists** tab and music clients (Finamp, Symfonium). |
 | **`YouTubeMusicLibraryPath`** | `string` | `" /data/youtube-music"` | Absolute container/host filesystem path where YouTube Music `.strm` audio pointers and `metadata.json` files are stored. |
@@ -340,22 +340,22 @@ All settings can be configured in the Jellyfin Dashboard under **Dashboard → P
 
 ---
 
-### SmartTube Navigation & Channel-Kategorien (Anti-Clutter Filter)
+### Channel Navigation & Categories (Anti-Clutter Filter)
 
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
-| **`EnableSubscriptionsFeedTab`** | `bool` | `true` | 📺 **Meine Abonnements (Feed)**: Chronological stream of latest uploads from all subscribed channels. |
-| **`EnableSubscribedChannelsTab`** | `bool` | `true` | 👤 **Abonnierte Kanäle (A–Z)**: Directory of all subscribed channels with avatar icons. |
-| **`EnableHistoryTab`** | `bool` | `true` | ▶️ **Zuletzt gesehen & Verlauf**: Recently watched videos with progress state. |
-| **`EnableLikedVideosTab`** | `bool` | `true` | 👍 **Mag ich (Liked Videos)**: User's liked YouTube videos. |
-| **`EnableWatchLaterTab`** | `bool` | `true` | ⏱️ **Später ansehen**: User's Watch Later playlist. |
-| **`EnablePlaylistsTab`** | `bool` | `true` | 📁 **Meine Playlists**: User's personal and saved playlists. |
-| **`EnableRecommendationsTab`** | `bool` | `false` | 🏠 **Empfehlungen & Startseite**: Algorithmic recommendations. *(Disabled by default to keep library clean).* |
-| **`EnableTrendingTab`** | `bool` | `false` | 🔥 **Trends & Beliebt**: Trending videos in user region. *(Disabled by default to keep library clean).* |
+| **`EnableSubscriptionsFeedTab`** | `bool` | `true` | 📺 **Subscriptions (Feed)**: Chronological stream of latest uploads from all subscribed channels. |
+| **`EnableSubscribedChannelsTab`** | `bool` | `true` | 👤 **Subscribed Channels (A–Z)**: Directory of all subscribed channels with avatar icons. |
+| **`EnableHistoryTab`** | `bool` | `true` | ▶️ **Continue Watching & History**: Recently watched videos with progress state. |
+| **`EnableLikedVideosTab`** | `bool` | `true` | 👍 **Liked Videos**: User's liked YouTube videos. |
+| **`EnableWatchLaterTab`** | `bool` | `true` | ⏱️ **Watch Later**: User's Watch Later playlist. |
+| **`EnablePlaylistsTab`** | `bool` | `true` | 📁 **My Playlists**: User's personal and saved playlists. |
+| **`EnableRecommendationsTab`** | `bool` | `false` | 🏠 **Home & Recommendations**: Algorithmic recommendations. *(Disabled by default to keep library clean).* |
+| **`EnableTrendingTab`** | `bool` | `false` | 🔥 **Trending & Popular**: Trending videos in user region. *(Disabled by default to keep library clean).* |
 | **`EnableGamingTab`** | `bool` | `false` | 🎮 **Gaming**: Popular gaming videos and streams. *(Disabled by default).* |
-| **`EnableMusicCategoryTab`** | `bool` | `false` | 🎵 **Musik-Kategorie**: Music video charts. *(Disabled by default).* |
+| **`EnableMusicCategoryTab`** | `bool` | `false` | 🎵 **Music Category**: Music video charts. *(Disabled by default).* |
 | **`EnableLiveTab`** | `bool` | `false` | 🔴 **Live Streams**: Active live broadcasts. *(Disabled by default).* |
-| **`EnableTrailersCategoryTab`** | `bool` | `false` | 🎬 **Kino-Trailer**: Movie trailer feed inside the channel. *(Disabled by default).* |
+| **`EnableTrailersCategoryTab`** | `bool` | `false` | 🎬 **Movie Trailers**: Movie trailer feed inside the channel. *(Disabled by default).* |
 
 ---
 
@@ -382,7 +382,7 @@ Each entry in `PluginConfiguration.UserAccounts` has the following schema:
 | Component Class | Interface / Base Type | Role & Responsibility |
 | :--- | :--- | :--- |
 | **`YouTubeStartupService`** | `IHostedService` | Runs at Jellyfin startup: ensures `/usr/local/bin/yt-dlp` is installed, auto-creates the **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries, seeds `fabian`'s OAuth token from `fabian_oauth_seed.json`, injects `youtubePlugin.js` into `index.html`, and triggers an initial background `.strm` & Playlist sync if the libraries are empty. |
-| **`YouTubeChannel`** | `IChannel`, `ISearchableChannel` | Provides the live **YouTube** SmartTube channel with 8 top-level categories (Home, Subscriptions, Watch History, Watch Later, Liked Videos, Trending, Subscribed Channels, and YouTube Music) plus live YouTube search. |
+| **`YouTubeChannel`** | `IChannel`, `ISearchableChannel` | Provides the live **YouTube** channel with 8 top-level categories (Home, Subscriptions, Watch History, Watch Later, Liked Videos, Trending, Subscribed Channels, and YouTube Music) plus live YouTube search. |
 | **`YouTubeMusicChannel`** | `IChannel`, `ISearchableChannel` | Provides the dedicated **YouTube Music** channel returning `ChannelMediaType.Audio` items (`Supermix & Music Home`, `Liked Songs`, `Recently Played Music`, `Trending & Charts`, `Subscribed Artists`). |
 | **`YouTubeMediaSourceProvider`** | `IMediaSourceProvider` | Intercepts playback for any item with a `ytvideo` or `ytmusic` ProviderId or `.strm` path containing `/api/youtubePlugin/stream/{videoId}/...`. Returns either a direct `m4a`/`aac` audio `MediaSourceInfo` (for music) or an HLS `master.m3u8` video `MediaSourceInfo` with external `.vtt` subtitle streams. |
 | **`YouTubeSeriesProvider`** | `IRemoteMetadataProvider<Series, SeriesInfo>` | Zero-latency metadata provider for YouTube feed folders and subscribed channel series (`[ytchannel_<id>]`), reading cached `metadata.json` written during sync. |
@@ -401,7 +401,7 @@ Each entry in `PluginConfiguration.UserAccounts` has the following schema:
 | **`YouTubeAlbumProvider`** | `IRemoteMetadataProvider<MusicAlbum, AlbumInfo>` | Metadata provider for YouTube Music album folders (`Supermix & Top Music`, `Liked Songs`, `Recently Played`). |
 | **`YouTubeArtistProvider`** | `IRemoteMetadataProvider<MusicArtist, ArtistInfo>` | Metadata provider for YouTube Music artists/channels. |
 | **`YouTubeImageProvider`** | `IRemoteImageProvider` | Supplies Primary, Thumb, and Backdrop thumbnails for `Series`, `Episode`, `Movie`, `Audio`, and `MusicAlbum` items directly from YouTube's CDN (`i.ytimg.com`). |
-| **`YouTubePlaylistAndCollectionSyncService`** | Internal Service | Synchronizes native Jellyfin **Playlists** (`MediaType.Video` and `MediaType.Audio`) via `IPlaylistManager` and native **Collections / BoxSets** (`YouTube SmartTube Feeds`, `YouTube Subscribed Channels`) via `ICollectionManager`. |
+| **`YouTubePlaylistAndCollectionSyncService`** | Internal Service | Synchronizes native Jellyfin **Playlists** (`MediaType.Video` and `MediaType.Audio`) via `IPlaylistManager` and native **Collections / BoxSets** (`YouTube Feeds`, `YouTube Subscribed Channels`) via `ICollectionManager`. |
 | **`SponsorBlockSessionMonitor`** | `IHostedService` | Monitors `ISessionManager.PlaybackProgress` for server-side SponsorBlock auto-seeking and `IUserDataManager.UserDataSaved` for Favorite (`♥️`) to YouTube Like (`👍`) synchronization. |
 
 ---
@@ -412,7 +412,7 @@ Both scheduled tasks appear in **Dashboard → Scheduled Tasks → YouTube** and
 
 | Task Name | Key | Default Schedule | Description |
 | :--- | :--- | :--- | :--- |
-| **Sync YouTube & YouTube Music Library (.strm, Playlists & Collections)** | `YouTubeSyncStrmTask` | Every **6 hours** (and once on startup if libraries are empty) | 1. Syncs all 7 SmartTube video feeds (`01`–`07`) and up to 25 subscribed channels into `/data/youtube`.<br>2. Syncs YouTube Music feeds (`Supermix & Top Music`, `Liked Songs`, `Recently Played`) into `/data/youtube-music` as `.strm` audio pointers.<br>3. Prunes stale `.strm` files and triggers a Jellyfin library validation scan.<br>4. Builds/updates native Jellyfin Video Playlists, Audio Playlists, and BoxSet Collections. |
+| **Sync YouTube & YouTube Music Library (.strm, Playlists & Collections)** | `YouTubeSyncStrmTask` | Every **6 hours** (and once on startup if libraries are empty) | 1. Syncs all 7 YouTube video feeds (`01`–`07`) and up to 25 subscribed channels into `/data/youtube`.<br>2. Syncs YouTube Music feeds (`Supermix & Top Music`, `Liked Songs`, `Recently Played`) into `/data/youtube-music` as `.strm` audio pointers.<br>3. Prunes stale `.strm` files and triggers a Jellyfin library validation scan.<br>4. Builds/updates native Jellyfin Video Playlists, Audio Playlists, and BoxSet Collections. |
 | **Sync YouTube Watch History & Progress** | `YouTubeSyncWatchHistoryTask` | Every **3 hours** | Fetches the linked user's YouTube Watch History (`FEhistory`) and marks matching Jellyfin library items as watched (`UserData.Played = true`) via `IUserDataManager`. |
 | **YouTube Episode Indexer** | `YouTubeEpisodeIndexerTask` | Every **24 hours** (and automatically after each library scan) | Sequences YouTube channel series chronologically by original publish date and assigns sequential `IndexNumber` (`S01E01..`) for clean library browsing. |
 
@@ -424,7 +424,7 @@ All endpoints are hosted by `YouTubePluginController` under `/api/youtubePlugin`
 
 | HTTP Method & Route | Query / Body Parameters | Description |
 | :--- | :--- | :--- |
-| `GET /api/youtubePlugin/client.js` | — | Serves the embedded `youtubePlugin.js` SmartTube & YouTube Music Web UI enhancement script. |
+| `GET /api/youtubePlugin/client.js` | — | Serves the embedded `youtubePlugin.js` YouTube & YouTube Music Web UI enhancement script. |
 | `GET /api/youtubePlugin/config` | `?userId=<guid>&username=<name>` | Returns the active feature flags, per-user OAuth link status (`IsAuthenticated`, `IsLinkedPersonalAccount`, `IsPrimaryUser`, `AccessMode`), and pending device code state. |
 | `POST /api/youtubePlugin/oauth/device/start` | `?userId=<guid>&username=<name>` | Starts a Google OAuth 2.0 TV Device Code session for the specified Jellyfin user and returns `user_code` and `verification_url` (`https://www.google.com/device`). |
 | `POST /api/youtubePlugin/oauth/device/poll` | `?userId=<guid>` | Polls Google's token endpoint (`oauth2.googleapis.com/token`) to check if the user completed authorization on their phone/browser. |
@@ -445,16 +445,16 @@ All endpoints are hosted by `YouTubePluginController` under `/api/youtubePlugin`
 
 ```text
 /data/youtube/                                      # YouTube Video Library (CollectionType: tvshows)
-├── 01 - Home & Empfehlungen [ytchannel_FEwhat_to_watch]/
+├── 01 - Home & Recommendations [ytchannel_FEwhat_to_watch]/
 │   ├── metadata.json
 │   └── Season 1/
 │       └── S01E1042 - Channel Name - Video Title [ytvideo_dQw4w9WgXcQ].strm
-├── 02 - Abo-Feed [ytchannel_FEsubscriptions]/
-├── 03 - Weiteransehen & Verlauf [ytchannel_FEhistory]/
-├── 04 - Später ansehen (Watch Later) [ytchannel_VLWL]/
-├── 05 - Videos, die ich mag (Liked) [ytchannel_VLLV]/
-├── 06 - Trends [ytchannel_FEtrending]/
-├── 07 - Geplante Streams & Live (Upcoming) [ytchannel_FEupcoming]/
+├── 02 - Subscriptions Feed [ytchannel_FEsubscriptions]/
+├── 03 - Continue Watching & History [ytchannel_FEhistory]/
+├── 04 - Watch Later [ytchannel_VLWL]/
+├── 05 - Liked Videos [ytchannel_VLLV]/
+├── 06 - Trending [ytchannel_FEtrending]/
+├── 07 - Upcoming Streams & Live [ytchannel_FEupcoming]/
 └── Subscribed Creator Name [ytchannel_UCxxxxxxxxxxxxxxxxxxxxxx]/
     ├── metadata.json
     └── Season 1/
@@ -538,6 +538,15 @@ The compiled plugin assembly (`Jellyfin.Plugin.YouTube.dll`, including embedded 
 | **`Shows`, `Suggestions`, or `Upcoming` tab is empty after adding the plugin** | Initial `.strm` sync or Jellyfin library scan has not completed yet, or `Season 1` folders lacked `Season` provider metadata. | Trigger **Dashboard → Scheduled Tasks → Sync YouTube & YouTube Music Library** and wait ~60 seconds for the scan to index `Season 1` and assign `PresentationUniqueKey`. |
 | **YouTube returns `Sign in to confirm you're not a bot` on datacenter IPs** | Oracle Cloud / datacenter IP range rate-limited by YouTube. | Configure `ProxyUrl` (e.g., `socks5://easyproxy-sports:1080`) and ensure the user is linked via OAuth 2.0 TV Device Code. |
 | **Another Jellyfin user sees `fabian`'s recommendations** | Global token fallback was active instead of per-user isolation. | Fixed in `YouTubeAuthManager`: `fabian`'s token is strictly bound to `PrimaryJellyfinUser` (`fabian`). Other users automatically get Public/Anonymous feeds until they link their own account. |
+
+---
+
+## 🙏 Credits
+
+- **[SmartTube](https://github.com/yuliskov/SmartTube)** — Inspiration for TV UX patterns, SponsorBlock integration, and DeArrow/playback workflows.
+- **[SponsorBlock](https://sponsor.ajay.app/)** — Crowdsourced sponsor segment skipping.
+- **[ReturnYouTubeDislike](https://returnyoutubedislike.com/)** — Community dislike counts and approval ratings.
+- **[DeArrow](https://dearrow.ajay.app/)** — Crowdsourced non-clickbait titles and thumbnails.
 
 ---
 

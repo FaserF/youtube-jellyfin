@@ -1,13 +1,13 @@
 (function () {
     "use strict";
-    console.log("[YouTube & YouTube Music SmartTube Plugin] Client script active");
+    console.log("[YouTube & YouTube Music Plugin] Client script active");
 
     function injectTopSearchButton() {
         var headerRight = document.querySelector(".headerRight");
-        if (!headerRight || document.getElementById("ytSmartTubeBtn")) return;
+        if (!headerRight || document.getElementById("ytPluginBtn")) return;
 
         var btn = document.createElement("button");
-        btn.id = "ytSmartTubeBtn";
+        btn.id = "ytPluginBtn";
         btn.type = "button";
         btn.className = "paper-icon-button-light";
         btn.title = "YouTube & YouTube Music Hub — Search, Audio & Account";
@@ -40,12 +40,12 @@
     }
 
     function openYouTubeSearchModal() {
-        var existing = document.getElementById("ytSmartTubeModal");
+        var existing = document.getElementById("ytPluginModal");
         if (existing) existing.remove();
 
         var pollTimer = null;
         var modal = document.createElement("div");
-        modal.id = "ytSmartTubeModal";
+        modal.id = "ytPluginModal";
         modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.90);z-index:99999;display:flex;flex-direction:column;padding:24px;overflow-y:auto;color:#fff;font-family:sans-serif;";
         modal.innerHTML =
             '<div style="max-width:1040px;width:100%;margin:0 auto;">' +

@@ -201,7 +201,7 @@ public class YouTubeStartupService : IHostedService
             {
                 var updated = html.Replace("</body>", $"{scriptTag}</body>", StringComparison.OrdinalIgnoreCase);
                 File.WriteAllText(indexFile, updated);
-                _logger.LogInformation("Injected YouTube SmartTube client script into Jellyfin index.html");
+                _logger.LogInformation("Injected YouTube client script into Jellyfin index.html");
             }
         }
         catch (Exception ex)

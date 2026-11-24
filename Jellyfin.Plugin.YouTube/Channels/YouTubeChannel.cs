@@ -39,7 +39,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
     }
 
     public string Name => "YouTube";
-    public string Description => "SmartTube 1:1 Parity for Jellyfin: Personal Home Feed, Subscriptions, Continue Watching, Watch Later, Liked Videos, Channels, SponsorBlock & 4K Ad-Free Streaming.";
+    public string Description => "Native YouTube integration for Jellyfin: Personal Home Feed, Subscriptions, Continue Watching, Watch Later, Liked Videos, Channels, SponsorBlock & 4K Ad-Free Streaming.";
     public string DataVersion => "1.0.0";
     public string HomePageUrl => "https://www.youtube.com";
     public ChannelParentalRating ParentalRating => ChannelParentalRating.GeneralAudience;

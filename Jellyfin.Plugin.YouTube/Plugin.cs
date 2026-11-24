@@ -22,7 +22,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => Guid.Parse("a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c");
 
     public override string Description =>
-        "SmartTube 1:1 Parity YouTube Integration for Jellyfin: Multi-User TV OAuth Login, Personal Home/Subscriptions/History/WatchLater Feeds, 4K Ad-Free Direct Streaming, SponsorBlock Auto-Skip, ReturnYouTubeDislike & Favorite-to-Like Sync.";
+        "YouTube & YouTube Music Integration for Jellyfin: Multi-User TV OAuth Login, Personal Home/Subscriptions/History/WatchLater Feeds, 4K Ad-Free Direct Streaming, SponsorBlock Auto-Skip, ReturnYouTubeDislike & Favorite-to-Like Sync.";
 
     public override void UpdateConfiguration(BasePluginConfiguration configuration)
     {

@@ -70,7 +70,7 @@ public class YouTubeSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
                 var feedSeries = new Series
                 {
                     Name = info.Name,
-                    Overview = $"YouTube SmartTube Feed: {info.Name}",
+                    Overview = $"YouTube Feed: {info.Name}",
                     ProductionYear = DateTime.UtcNow.Year
                 };
                 feedSeries.AddStudio("YouTube");
