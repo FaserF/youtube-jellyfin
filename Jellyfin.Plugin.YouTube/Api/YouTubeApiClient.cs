@@ -107,10 +107,32 @@ public partial class YouTubeApiClient : IDisposable
             return null;
         }
 
+        var isCustomClient = !string.Equals(clientId, DefaultTvClientId, StringComparison.OrdinalIgnoreCase);
+        var primaryScope = isCustomClient
+            ? "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly"
+            : "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content";
+
+        var resp = await TryRequestDeviceCodeWithScopeAsync(clientId, primaryScope, cancellationToken).ConfigureAwait(false);
+        if (resp == null && isCustomClient)
+        {
+            resp = await TryRequestDeviceCodeWithScopeAsync(
+                clientId,
+                "https://www.googleapis.com/auth/youtube.readonly",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return resp;
+    }
+
+    private async Task<YouTubeDeviceCodeResponse?> TryRequestDeviceCodeWithScopeAsync(
+        string clientId,
+        string scope,
+        CancellationToken cancellationToken)
+    {
         var form = new Dictionary<string, string>
         {
             ["client_id"] = clientId,
-            ["scope"] = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content"
+            ["scope"] = scope
         };
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/device/code")
@@ -122,7 +144,7 @@ public partial class YouTubeApiClient : IDisposable
         var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
-            _logger.LogWarning("Google OAuth device code request failed with status {StatusCode}: {Response}", resp.StatusCode, json);
+            _logger.LogWarning("Google OAuth device code request failed ({Scope}) with status {StatusCode}: {Response}", scope, resp.StatusCode, json);
             return null;
         }
 

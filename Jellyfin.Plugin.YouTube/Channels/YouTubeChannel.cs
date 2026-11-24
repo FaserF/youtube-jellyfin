@@ -479,6 +479,11 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         var videoId = isAudio
             ? id["ytm_".Length..]
             : (id.StartsWith("yt_", StringComparison.Ordinal) ? id["yt_".Length..] : id);
+        if (!YouTubeIdKeys.IsValidYouTubeVideoId(videoId))
+        {
+            return Array.Empty<MediaSourceInfo>();
+        }
+
         using var client = CreateClient();
         var streamInfo = await client.ResolveStreamAsync(videoId, cancellationToken).ConfigureAwait(false);
         if (streamInfo == null)
@@ -486,7 +491,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             return Array.Empty<MediaSourceInfo>();
         }
 
-        const string internalServerUrl = "http://127.0.0.1:8096";
+        var internalServerUrl = ScheduledTasks.SyncYouTubeStrmTask.GetStrmServerBaseUrl(Config);
         if (isAudio)
         {
             var bitrate = (Config.YouTubeMusicPreferredBitrate > 0 ? Config.YouTubeMusicPreferredBitrate : 256) * 1000;

@@ -214,4 +214,20 @@ public class IssueFixesTests
         doc.RootElement.TryGetProperty("oauthConfigured", out _).Should().BeTrue();
         doc.RootElement.TryGetProperty("strmPathWritable", out _).Should().BeTrue();
     }
+
+    [Fact]
+    public void ManifestJson_ShouldOnlyTargetJellyfin12_AndNotStale10_10()
+    {
+        var manifestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "manifest.json"));
+        if (!File.Exists(manifestPath))
+        {
+            return;
+        }
+
+        var json = File.ReadAllText(manifestPath);
+        using var doc = JsonDocument.Parse(json);
+        var versions = doc.RootElement[0].GetProperty("versions").EnumerateArray().ToList();
+        versions.Should().NotBeEmpty();
+        versions.Should().OnlyContain(v => v.GetProperty("targetAbi").GetString() == "12.0.0.0");
+    }
 }

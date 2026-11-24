@@ -487,6 +487,31 @@ public class SyncYouTubeStrmTask : IScheduledTask
             return published.TrimEnd('/');
         }
 
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up ||
+                    ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                {
+                    continue;
+                }
+
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                        !System.Net.IPAddress.IsLoopback(ua.Address))
+                    {
+                        return $"http://{ua.Address}:8096";
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to loopback if network interface enumeration fails
+        }
+
         return "http://127.0.0.1:8096";
     }
 

@@ -150,7 +150,7 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                                         PlaySessionId = Guid.NewGuid().ToString("N")
                                     };
 
-                                    context.Result = new JsonResult(pbResp);
+                                    context.Result = new OkObjectResult(pbResp);
                                     return;
                                 }
                             }
@@ -161,9 +161,12 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                                           (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
                                                                  item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
                             var trailerParam = isTrailer ? "?isTrailer=true" : string.Empty;
+                            var hasHls = !Api.YouTubeApiClient.TryGetCachedStream(videoId, out var cachedStream) ||
+                                         !string.IsNullOrWhiteSpace(cachedStream?.HlsManifestUrl);
+                            var videoEndpoint = hasHls ? "master.m3u8" : "play";
                             var target = isAudio
                                 ? $"{serverUrl}/api/youtubePlugin/stream/{videoId}/audio.m4a"
-                                : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8{trailerParam}";
+                                : $"{serverUrl}/api/youtubePlugin/stream/{videoId}/{videoEndpoint}{trailerParam}";
 
                             context.Result = new RedirectResult(target);
                             return;

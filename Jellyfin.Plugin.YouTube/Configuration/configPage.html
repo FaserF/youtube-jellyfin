@@ -322,12 +322,19 @@
                 async function loadUsersList() {
                     try {
                         var res = await authFetch("/api/youtubePlugin/users");
-                        var data = await res.json();
+                        var data = res.ok ? await res.json() : { users: [] };
+                        var users = data.users || [];
+                        if (users.length === 0 && window.ApiClient && ApiClient.getUsers) {
+                            var jfUsers = await ApiClient.getUsers();
+                            users = (jfUsers || []).map(function (u) {
+                                return { id: u.Id, username: u.Name, isLinked: false, linkedAccount: null };
+                            });
+                        }
                         var sel = document.getElementById("selectJellyfinUser");
                         sel.replaceChildren();
                         var table = document.getElementById("linkedUsersTable");
                         var rowEls = [];
-                        (data.users || []).forEach(function (u) {
+                        users.forEach(function (u) {
                             var opt = document.createElement("option");
                             opt.value = u.username;
                             opt.setAttribute("data-uid", u.id);
