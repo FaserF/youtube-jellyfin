@@ -101,4 +101,60 @@ public class IssueFixesTests
         doc.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
         doc.RootElement.GetProperty("error").GetString().Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public void ExtractPlaylistsFromInnertubeJson_ShouldExtractOwnedAndSavedPlaylists_AndSkipWatchLater()
+    {
+        const string innertubeJson = """
+        {
+          "contents": {
+            "items": [
+              {
+                "tileRenderer": {
+                  "contentType": "TILE_CONTENT_TYPE_PLAYLIST",
+                  "contentId": "PLPrivateCreated123",
+                  "onSelectCommand": {
+                    "browseEndpoint": { "browseId": "VLPLPrivateCreated123" }
+                  },
+                  "metadata": {
+                    "tileMetadataRenderer": {
+                      "title": { "simpleText": "My Private Playlist" }
+                    }
+                  }
+                }
+              },
+              {
+                "gridPlaylistRenderer": {
+                  "playlistId": "PLSavedFromOther456",
+                  "title": { "runs": [ { "text": "Saved Community Playlist" } ] },
+                  "videoCountText": { "simpleText": "42 videos" }
+                }
+              },
+              {
+                "tileRenderer": {
+                  "contentType": "TILE_CONTENT_TYPE_PLAYLIST",
+                  "onSelectCommand": {
+                    "browseEndpoint": { "browseId": "VLWL" }
+                  },
+                  "metadata": {
+                    "tileMetadataRenderer": {
+                      "title": { "simpleText": "Watch Later" }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(innertubeJson);
+        var playlists = new List<Jellyfin.Plugin.YouTube.Models.YouTubePlaylistItem>();
+        YouTubeApiClient.ExtractPlaylistsFromInnertubeJson(doc.RootElement, playlists, 50);
+
+        playlists.Should().HaveCount(2);
+        playlists.Select(p => p.PlaylistId).Should().Contain(["PLPrivateCreated123", "PLSavedFromOther456"]);
+        playlists.First(p => p.PlaylistId == "PLPrivateCreated123").Title.Should().Be("My Private Playlist");
+        playlists.First(p => p.PlaylistId == "PLSavedFromOther456").ItemCount.Should().Be(42);
+    }
 }

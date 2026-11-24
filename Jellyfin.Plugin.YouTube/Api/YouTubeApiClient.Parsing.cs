@@ -62,6 +62,241 @@ public partial class YouTubeApiClient
         }
     }
 
+    public static void ExtractPlaylistsFromInnertubeJson(JsonElement element, List<YouTubePlaylistItem> results, int maxResults)
+    {
+        if (results.Count >= maxResults)
+        {
+            return;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("tileRenderer", out var tile))
+            {
+                var item = ParsePlaylistTileRenderer(tile);
+                if (item != null && !results.Any(r => string.Equals(r.PlaylistId, item.PlaylistId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(item);
+                }
+            }
+            else if (element.TryGetProperty("gridPlaylistRenderer", out var gpr))
+            {
+                var item = ParsePlaylistRenderer(gpr);
+                if (item != null && !results.Any(r => string.Equals(r.PlaylistId, item.PlaylistId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(item);
+                }
+            }
+            else if (element.TryGetProperty("playlistRenderer", out var pr))
+            {
+                var item = ParsePlaylistRenderer(pr);
+                if (item != null && !results.Any(r => string.Equals(r.PlaylistId, item.PlaylistId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(item);
+                }
+            }
+            else if (element.TryGetProperty("compactPlaylistRenderer", out var cpr))
+            {
+                var item = ParsePlaylistRenderer(cpr);
+                if (item != null && !results.Any(r => string.Equals(r.PlaylistId, item.PlaylistId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(item);
+                }
+            }
+            else if (element.TryGetProperty("lockupViewModel", out var lockup))
+            {
+                var item = ParsePlaylistLockupViewModel(lockup);
+                if (item != null && !results.Any(r => string.Equals(r.PlaylistId, item.PlaylistId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(item);
+                }
+            }
+
+            foreach (var prop in element.EnumerateObject())
+            {
+                if (results.Count >= maxResults)
+                {
+                    break;
+                }
+
+                ExtractPlaylistsFromInnertubeJson(prop.Value, results, maxResults);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                if (results.Count >= maxResults)
+                {
+                    break;
+                }
+
+                ExtractPlaylistsFromInnertubeJson(child, results, maxResults);
+            }
+        }
+    }
+
+    private static string? NormalizePlaylistBrowseId(string? rawId)
+    {
+        if (string.IsNullOrWhiteSpace(rawId))
+        {
+            return null;
+        }
+
+        var id = rawId.StartsWith("VL", StringComparison.OrdinalIgnoreCase) ? rawId[2..] : rawId;
+        if (string.IsNullOrWhiteSpace(id) ||
+            string.Equals(id, "WL", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(id, "LL", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(id, "HL", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return id.StartsWith("PL", StringComparison.OrdinalIgnoreCase) ||
+               id.StartsWith("OLAK", StringComparison.OrdinalIgnoreCase) ||
+               id.StartsWith("RD", StringComparison.OrdinalIgnoreCase) ||
+               id.StartsWith("FL", StringComparison.OrdinalIgnoreCase)
+            ? id
+            : null;
+    }
+
+    private static string? ExtractThumbnailUrlFromNode(JsonElement node)
+    {
+        if (node.TryGetProperty("thumbnails", out var thumbs) && thumbs.ValueKind == JsonValueKind.Array)
+        {
+            string? best = null;
+            foreach (var th in thumbs.EnumerateArray())
+            {
+                if (th.TryGetProperty("url", out var urlProp) && urlProp.ValueKind == JsonValueKind.String)
+                {
+                    best = urlProp.GetString();
+                }
+            }
+
+            return best;
+        }
+
+        return null;
+    }
+
+    private static YouTubePlaylistItem? ParsePlaylistTileRenderer(JsonElement tile)
+    {
+        var contentType = tile.TryGetProperty("contentType", out var ct) ? ct.GetString() : null;
+        string? rawId = null;
+
+        if (tile.TryGetProperty("onSelectCommand", out var osc))
+        {
+            if (osc.TryGetProperty("browseEndpoint", out var be) && be.TryGetProperty("browseId", out var bid))
+            {
+                rawId = bid.GetString();
+            }
+            else if (osc.TryGetProperty("watchEndpoint", out var we) && we.TryGetProperty("playlistId", out var pid))
+            {
+                rawId = pid.GetString();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(rawId) &&
+            string.Equals(contentType, "TILE_CONTENT_TYPE_PLAYLIST", StringComparison.OrdinalIgnoreCase) &&
+            tile.TryGetProperty("contentId", out var cid))
+        {
+            rawId = cid.GetString();
+        }
+
+        var playlistId = NormalizePlaylistBrowseId(rawId);
+        if (string.IsNullOrWhiteSpace(playlistId))
+        {
+            return null;
+        }
+
+        var title = playlistId;
+        var description = string.Empty;
+        if (tile.TryGetProperty("metadata", out var meta) &&
+            meta.TryGetProperty("tileMetadataRenderer", out var tmr) &&
+            tmr.TryGetProperty("title", out var tObj))
+        {
+            title = ExtractText(tObj) ?? playlistId;
+        }
+
+        var thumb = string.Empty;
+        if (tile.TryGetProperty("header", out var hdr) &&
+            hdr.TryGetProperty("tileHeaderRenderer", out var thr) &&
+            thr.TryGetProperty("thumbnail", out var thNode))
+        {
+            thumb = ExtractThumbnailUrlFromNode(thNode) ?? string.Empty;
+        }
+
+        return new YouTubePlaylistItem
+        {
+            PlaylistId = playlistId,
+            Title = title,
+            Description = description,
+            ThumbnailUrl = thumb
+        };
+    }
+
+    private static YouTubePlaylistItem? ParsePlaylistRenderer(JsonElement renderer)
+    {
+        var rawId = renderer.TryGetProperty("playlistId", out var pid) ? pid.GetString() : null;
+        var playlistId = NormalizePlaylistBrowseId(rawId);
+        if (string.IsNullOrWhiteSpace(playlistId))
+        {
+            return null;
+        }
+
+        var title = renderer.TryGetProperty("title", out var tObj) ? ExtractText(tObj) ?? playlistId : playlistId;
+        var thumb = renderer.TryGetProperty("thumbnail", out var thNode)
+            ? ExtractThumbnailUrlFromNode(thNode) ?? string.Empty
+            : string.Empty;
+
+        var count = 0;
+        if (renderer.TryGetProperty("videoCountText", out var vct))
+        {
+            var txt = ExtractText(vct) ?? string.Empty;
+            var digits = new string(txt.Where(char.IsDigit).ToArray());
+            _ = int.TryParse(digits, out count);
+        }
+
+        return new YouTubePlaylistItem
+        {
+            PlaylistId = playlistId,
+            Title = title,
+            ItemCount = count,
+            ThumbnailUrl = thumb
+        };
+    }
+
+    private static YouTubePlaylistItem? ParsePlaylistLockupViewModel(JsonElement lockup)
+    {
+        var contentType = lockup.TryGetProperty("contentType", out var ct) ? ct.GetString() : null;
+        if (!string.Equals(contentType, "LOCKUP_CONTENT_TYPE_PLAYLIST", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var rawId = lockup.TryGetProperty("contentId", out var cid) ? cid.GetString() : null;
+        var playlistId = NormalizePlaylistBrowseId(rawId);
+        if (string.IsNullOrWhiteSpace(playlistId))
+        {
+            return null;
+        }
+
+        var title = playlistId;
+        if (lockup.TryGetProperty("metadata", out var meta) &&
+            meta.TryGetProperty("lockupMetadataViewModel", out var lm) &&
+            lm.TryGetProperty("title", out var tObj) &&
+            tObj.TryGetProperty("content", out var tContent))
+        {
+            title = tContent.GetString() ?? playlistId;
+        }
+
+        return new YouTubePlaylistItem
+        {
+            PlaylistId = playlistId,
+            Title = title
+        };
+    }
+
     public static void ExtractVideosFromInnertubeJson(JsonElement element, List<YouTubeVideoItem> results, int maxResults)
     {
         if (results.Count >= maxResults)

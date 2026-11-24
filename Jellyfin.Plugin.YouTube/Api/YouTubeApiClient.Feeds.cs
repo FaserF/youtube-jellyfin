@@ -333,45 +333,114 @@ public partial class YouTubeApiClient
         var token = await EnsureUserAccessTokenAsync(usernameOrId, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(token))
         {
+            _logger.LogWarning("Cannot fetch user playlists for {User}: no OAuth access token available.", usernameOrId ?? "(default)");
             return list;
         }
 
-        try
-        {
-            var url = $"https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults={Math.Min(50, maxResults)}";
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            if (resp.IsSuccessStatusCode)
-            {
-                var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in items.EnumerateArray())
-                    {
-                        var pid = item.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
-                        if (string.IsNullOrWhiteSpace(pid) || !item.TryGetProperty("snippet", out var snippet))
-                        {
-                            continue;
-                        }
+        // 1. Try Innertube library/playlist browse endpoints first (works with TV OAuth token, includes private & saved playlists, zero Data API quota)
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var hl = config.PreferredLanguage.Split('-')[0];
+        var gl = config.PreferredRegion;
 
-                        var count = item.TryGetProperty("contentDetails", out var cd) && cd.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0;
-                        list.Add(new YouTubePlaylistItem
+        foreach (var browseId in new[] { "FElibrary", "FEplaylist_aggregation" })
+        {
+            if (list.Count >= maxResults)
+            {
+                break;
+            }
+
+            try
+            {
+                var payload = JsonSerializer.Serialize(new
+                {
+                    context = new
+                    {
+                        client = new
                         {
-                            PlaylistId = pid,
-                            Title = snippet.TryGetProperty("title", out var t) ? t.GetString() ?? pid : pid,
-                            Description = snippet.TryGetProperty("description", out var d) ? d.GetString() ?? string.Empty : string.Empty,
-                            ItemCount = count,
-                            ThumbnailUrl = ExtractBestThumbnailFromSnippet(snippet)
-                        });
-                    }
+                            clientName = "TVHTML5",
+                            clientVersion = "7.20250101.00.00",
+                            hl,
+                            gl
+                        }
+                    },
+                    browseId
+                });
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false")
+                {
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                };
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    ExtractPlaylistsFromInnertubeJson(doc.RootElement, list, maxResults);
+                }
+                else
+                {
+                    var errBody = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    _logger.LogWarning("Innertube playlist browse ({BrowseId}) failed with HTTP {StatusCode} for {User}: {Error}", browseId, (int)resp.StatusCode, usernameOrId, errBody);
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error fetching Innertube playlists ({BrowseId}) for {User}", browseId, usernameOrId);
+            }
         }
-        catch (Exception ex)
+
+        // 2. Supplement/fallback via YouTube Data API v3 (captures any user-created private playlists not shown in FElibrary)
+        if (list.Count < maxResults)
         {
-            _logger.LogWarning(ex, "Error fetching user playlists for {User}", usernameOrId);
+            try
+            {
+                var url = $"https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults={Math.Min(50, maxResults)}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            var pid = item.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
+                            if (string.IsNullOrWhiteSpace(pid) || !item.TryGetProperty("snippet", out var snippet))
+                            {
+                                continue;
+                            }
+
+                            if (list.Any(p => string.Equals(p.PlaylistId, pid, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                continue;
+                            }
+
+                            var count = item.TryGetProperty("contentDetails", out var cd) && cd.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0;
+                            list.Add(new YouTubePlaylistItem
+                            {
+                                PlaylistId = pid,
+                                Title = snippet.TryGetProperty("title", out var t) ? t.GetString() ?? pid : pid,
+                                Description = snippet.TryGetProperty("description", out var d) ? d.GetString() ?? string.Empty : string.Empty,
+                                ItemCount = count,
+                                ThumbnailUrl = ExtractBestThumbnailFromSnippet(snippet)
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    var errBody = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    _logger.LogWarning("YouTube Data API v3 playlists request failed with HTTP {StatusCode} for {User}: {Error}", (int)resp.StatusCode, usernameOrId, errBody);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error fetching Data API user playlists for {User}", usernameOrId);
+            }
         }
 
         return list;
