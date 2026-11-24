@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.YouTube.Api;
 public partial class YouTubeApiClient : IDisposable
 {
     public const string DefaultTvClientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
-    public const string DefaultTvClientSecret = "SboVhoG9s0rNafixCSGGKXAT";
+    public const string DefaultTvClient[REDACTED_SECRET_94074];
     private const string TvUserAgent = "Mozilla/5.0 (Linux; Tizen 5.0; SAMSUNG SM-T830) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.31 TV Safari/537.36";
 
     public static string GetEffectiveClientId(PluginConfiguration? config)
