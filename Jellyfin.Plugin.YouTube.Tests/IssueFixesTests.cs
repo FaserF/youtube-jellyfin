@@ -230,4 +230,93 @@ public class IssueFixesTests
         versions.Should().NotBeEmpty();
         versions.Should().OnlyContain(v => v.GetProperty("targetAbi").GetString() == "12.0.0.0");
     }
+
+    [Fact]
+    public async Task GetChannelItemMediaInfo_ShouldReturnEmpty_ForNonVideoIds()
+    {
+        var channel = new Jellyfin.Plugin.YouTube.Channels.YouTubeChannel(
+            new Mock<IHttpClientFactory>().Object,
+            new Mock<ILogger<Jellyfin.Plugin.YouTube.Channels.YouTubeChannel>>().Object,
+            new Mock<ILoggerFactory>().Object);
+
+        var info = await channel.GetChannelItemMediaInfo("login_code_display", TestContext.Current.CancellationToken);
+        info.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task YouTubePlaybackFilter_ShouldReturnOkObjectResult_OnPlaybackInfo()
+    {
+        var itemId = Guid.NewGuid();
+        var item = new MediaBrowser.Controller.Entities.TV.Episode
+        {
+            Id = itemId,
+            Name = "Test Video",
+            Path = "/data/youtube/Test/Season 1/Test [YouTubeVideo-dQw4w9WgXcQ].strm"
+        };
+        item.ProviderIds[Jellyfin.Plugin.YouTube.Providers.YouTubeIdKeys.Video] = "dQw4w9WgXcQ";
+
+        var libMgr = new Mock<ILibraryManager>();
+        libMgr.Setup(l => l.GetItemById(itemId)).Returns(item);
+
+        var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("YouTube")).Returns(new HttpClient(handler));
+
+        var logs = new List<string>();
+        var loggerMock = new Mock<ILogger<Jellyfin.Plugin.YouTube.Providers.YouTubeMediaSourceProvider>>();
+        loggerMock.Setup(x => x.Log(
+            It.IsAny<LogLevel>(),
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()))
+            .Callback(new InvocationAction(inv => logs.Add($"{inv.Arguments[2]} | {inv.Arguments[3]}")));
+
+        var msp = new Jellyfin.Plugin.YouTube.Providers.YouTubeMediaSourceProvider(
+            factory.Object,
+            loggerMock.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+
+        var sources = (await msp.GetMediaSources(item, TestContext.Current.CancellationToken)).ToList();
+        sources.Should().NotBeEmpty(because: string.Join("; ", logs));
+
+        var filter = new Jellyfin.Plugin.YouTube.Filters.YouTubePlaybackFilter(libMgr.Object, msp);
+
+        var httpCtx = new DefaultHttpContext();
+        httpCtx.Request.Path = $"/Items/{itemId:N}/PlaybackInfo";
+        httpCtx.Request.Scheme = "https";
+        httpCtx.Request.Host = new HostString("jf.example.com");
+
+        var actionCtx = new ActionContext(httpCtx, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        var executingCtx = new Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext(
+            actionCtx,
+            [],
+            new Dictionary<string, object?> { ["itemId"] = itemId },
+            new object());
+
+        await filter.OnActionExecutionAsync(executingCtx, () => Task.FromResult(
+            new Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext(actionCtx, [], new object())));
+
+        var ok = executingCtx.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var pbResp = ok.Value.Should().BeOfType<MediaBrowser.Model.MediaInfo.PlaybackInfoResponse>().Subject;
+        pbResp.MediaSources.Should().NotBeEmpty();
+        pbResp.MediaSources[0].IsRemote.Should().BeTrue();
+    }
+
+    [Fact]
+    public void UiAndChannelMetadata_ShouldNotContainSmartTubeBranding()
+    {
+        var channel = new Jellyfin.Plugin.YouTube.Channels.YouTubeChannel(
+            new Mock<IHttpClientFactory>().Object,
+            new Mock<ILogger<Jellyfin.Plugin.YouTube.Channels.YouTubeChannel>>().Object,
+            new Mock<ILoggerFactory>().Object);
+
+        channel.Description.Should().NotContainEquivalentOf("SmartTube");
+
+        var jsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Jellyfin.Plugin.YouTube", "Features", "Script", "youtubePlugin.js"));
+        if (File.Exists(jsPath))
+        {
+            File.ReadAllText(jsPath).Should().NotContainEquivalentOf("SmartTube");
+        }
+    }
 }
