@@ -86,9 +86,7 @@
 
         var uid = (window.ApiClient && window.ApiClient.getCurrentUserId && window.ApiClient.getCurrentUserId()) || "";
 
-        document.getElementById("ytBtnLinkAccount").onclick = async function () {
-            var panel = document.getElementById("ytAccountPanel");
-            panel.style.display = panel.style.display === "none" ? "block" : "none";
+        async function refreshAccountStatus() {
             try {
                 var r = await authFetch("/api/youtubePlugin/users");
                 var d = await r.json();
@@ -101,15 +99,34 @@
                 strongUser.textContent = me ? me.username : uid;
                 var sep = document.createTextNode(" — ");
                 var statusSpan = document.createElement("span");
+                var nodes = [labelPrefix, strongUser, sep, statusSpan];
                 if (me && me.isLinked) {
                     statusSpan.style.color = "#4cd964";
                     statusSpan.textContent = "✅ Linked to " + (me.linkedAccount || "") + " (YouTube & YouTube Music)";
+                    var unlinkBtn = document.createElement("button");
+                    unlinkBtn.type = "button";
+                    unlinkBtn.textContent = "Unlink";
+                    unlinkBtn.style.cssText = "margin-left:10px;background:#3f3f46;color:#fff;border:1px solid #555;padding:3px 8px;border-radius:4px;font-size:12px;cursor:pointer;";
+                    unlinkBtn.onclick = async function () {
+                        unlinkBtn.disabled = true;
+                        await authFetch("/api/youtubePlugin/users/" + encodeURIComponent(me.username), { method: "DELETE" });
+                        await refreshAccountStatus();
+                    };
+                    nodes.push(unlinkBtn);
                 } else {
                     statusSpan.style.color = "#aaa";
                     statusSpan.textContent = "🌐 Public Mode (Not linked yet)";
                 }
-                infoEl.replaceChildren(labelPrefix, strongUser, sep, statusSpan);
+                infoEl.replaceChildren.apply(infoEl, nodes);
             } catch (e) {}
+        }
+
+        document.getElementById("ytBtnLinkAccount").onclick = async function () {
+            var panel = document.getElementById("ytAccountPanel");
+            panel.style.display = panel.style.display === "none" ? "block" : "none";
+            if (panel.style.display === "block") {
+                await refreshAccountStatus();
+            }
         };
 
         document.getElementById("ytStartDeviceAuth").onclick = async function () {
@@ -138,6 +155,7 @@
                             pollTimer = null;
                             document.getElementById("ytDevicePollStatus").style.color = "#4cd964";
                             document.getElementById("ytDevicePollStatus").textContent = "✅ Linked to " + pd.accountName + "!";
+                            await refreshAccountStatus();
                         } else if (pd.pending === false) {
                             clearInterval(pollTimer);
                             pollTimer = null;

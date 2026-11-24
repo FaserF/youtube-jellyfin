@@ -44,6 +44,54 @@ public class YouTubePluginController : ControllerBase
     private YouTubeApiClient CreateClient() =>
         new(_httpClientFactory.CreateClient("YouTube"), _loggerFactory.CreateLogger<YouTubeApiClient>());
 
+    [HttpGet("diagnostics")]
+    [Authorize(Policy = "RequiresElevation")]
+    public ActionResult GetDiagnostics()
+    {
+        var config = Config;
+        var ytDlpResolved = YouTubeApiClient.ResolveYtDlpBinary(config);
+        var ytDlpFound = ytDlpResolved != "yt-dlp" && System.IO.File.Exists(ytDlpResolved);
+        var denoPath = System.IO.File.Exists("/usr/local/bin/deno")
+            ? "/usr/local/bin/deno"
+            : (System.IO.File.Exists("/config/bin/deno") ? "/config/bin/deno" : null);
+
+        var oauthConfigured =
+            !string.IsNullOrWhiteSpace(YouTubeApiClient.GetEffectiveClientId(config)) &&
+            !string.IsNullOrWhiteSpace(YouTubeApiClient.GetEffectiveClientSecret(config));
+
+        var strmPath = !string.IsNullOrWhiteSpace(config.StrmLibraryPath) ? config.StrmLibraryPath : "/data/youtube";
+        var strmWritable = false;
+        try
+        {
+            Directory.CreateDirectory(strmPath);
+            strmWritable = Directory.Exists(strmPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Diagnostics: StrmLibraryPath {Path} is not accessible", strmPath);
+        }
+
+        var linkedCount = (config.UserAccounts?.Count(a => !string.IsNullOrWhiteSpace(a.RefreshToken)) ?? 0)
+                          + (!string.IsNullOrWhiteSpace(config.PersistedRefreshToken) ? 1 : 0);
+
+        var publicUrlConfigured = !string.IsNullOrWhiteSpace(config.PublicServerUrl) ||
+                                  !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("JELLYFIN_PublishedServerUrl"));
+
+        return Ok(new
+        {
+            ytDlpPath = ytDlpResolved,
+            ytDlpFound,
+            denoFound = denoPath != null,
+            denoPath,
+            oauthConfigured,
+            linkedUsersCount = linkedCount,
+            strmLibraryPath = strmPath,
+            strmPathWritable = strmWritable,
+            publicServerUrlConfigured = publicUrlConfigured,
+            publicServerUrl = config.PublicServerUrl
+        });
+    }
+
     [HttpGet("Script")]
     [AllowAnonymous]
     [Produces("application/javascript")]

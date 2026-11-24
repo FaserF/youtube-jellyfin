@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Controllers;
 using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -188,5 +190,28 @@ public class IssueFixesTests
         var configDefault = new PluginConfiguration { PublicServerUrl = string.Empty };
         var url = Jellyfin.Plugin.YouTube.ScheduledTasks.SyncYouTubeStrmTask.GetStrmServerBaseUrl(configDefault);
         url.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void GetDiagnostics_ShouldRequireAdminElevation_AndReturnStatusPayload()
+    {
+        var method = typeof(YouTubePluginController).GetMethod(nameof(YouTubePluginController.GetDiagnostics));
+        method.Should().NotBeNull();
+        var auth = method!.GetCustomAttribute<AuthorizeAttribute>();
+        auth.Should().NotBeNull();
+        auth!.Policy.Should().Be("RequiresElevation");
+
+        var controller = new YouTubePluginController(
+            new Mock<IHttpClientFactory>().Object,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IUserManager>().Object,
+            new Mock<ILogger<YouTubePluginController>>().Object,
+            new Mock<ILoggerFactory>().Object);
+
+        var result = controller.GetDiagnostics().Should().BeOfType<OkObjectResult>().Subject;
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(result.Value));
+        doc.RootElement.TryGetProperty("ytDlpPath", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("oauthConfigured", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("strmPathWritable", out _).Should().BeTrue();
     }
 }

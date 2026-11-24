@@ -12,463 +12,249 @@
         <div data-role="content">
             <div class="content-primary">
                 <form id="YouTubeConfigForm">
+                    <!-- Quick-Setup Wizard -->
                     <div class="verticalSection">
-                        <h2 class="sectionTitle">YouTube - Multi-User TV Account Linking</h2>
-                        <p>Each Jellyfin user can link their own personal YouTube account via the official YouTube TV
-                            Device Code flow. Unlinked users automatically receive Public YouTube (or can be hidden
-                            below).</p>
+                        <h2 class="sectionTitle">🚀 YouTube Quick-Setup Wizard</h2>
+                        <p style="color:#ccc;">Follow these steps to connect your YouTube account and enable ad-free streaming. Advanced options are collapsed below.</p>
 
-                        <div
-                            style="background:#18181b;border:1px solid #e50914;border-radius:8px;padding:16px;margin-bottom:20px;">
-                            <h3 style="margin-top:0;color:#ff4d4d;">📺 Link Jellyfin User to YouTube via TV Code</h3>
+                        <!-- Live Readiness Checklist -->
+                        <div style="background:#18181b;border:1px solid #333;border-radius:8px;padding:14px;margin-bottom:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+                                <strong style="font-size:14px;">🩺 Live Readiness Checklist</strong>
+                                <button is="emby-button" type="button" id="btnRefreshDiag" class="raised" style="padding:4px 10px;font-size:12px;">
+                                    <span>🔄 Refresh Status</span>
+                                </button>
+                            </div>
+                            <div id="ytDiagBadges" style="display:flex;flex-wrap:wrap;gap:8px;font-size:13px;">Checking plugin status...</div>
+                        </div>
+
+                        <!-- Step 1: OAuth & Account Linking -->
+                        <div style="background:#18181b;border:1px solid #e50914;border-radius:8px;padding:16px;margin-bottom:16px;">
+                            <h3 style="margin-top:0;color:#ff4d4d;">Step 1 — Link YouTube Account (TV Device Code)</h3>
+                            <p style="font-size:13px;color:#aaa;margin-top:0;">
+                                Create a Google Cloud OAuth 2.0 Client (type: <strong>TVs and Limited Input devices</strong>) and enter the credentials below, or leave blank if configured via environment variables.
+                            </p>
+                            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                                <div class="inputContainer" style="flex:1;min-width:220px;">
+                                    <label class="inputLabel" for="txtOAuthClientId">OAuth Client ID</label>
+                                    <input id="txtOAuthClientId" type="text" is="emby-input" placeholder="xxxx.apps.googleusercontent.com" />
+                                </div>
+                                <div class="inputContainer" style="flex:1;min-width:220px;">
+                                    <label class="inputLabel" for="txtOAuthClientSecret">OAuth Client Secret</label>
+                                    <input id="txtOAuthClientSecret" type="password" is="emby-input" placeholder="GOCSPX-..." />
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                                <div class="inputContainer" style="flex:1;min-width:220px;margin-bottom:0;">
+                                    <label class="inputLabel" for="selectJellyfinUser">Jellyfin User to Link</label>
+                                    <select is="emby-select" id="selectJellyfinUser" class="emby-select-withcolor emby-select"></select>
+                                </div>
+                                <button is="emby-button" type="button" id="btnGenerateTvCode" class="raised button-submit" style="background:#e50914;color:#fff;">
+                                    <span>🔑 Generate TV Activation Code</span>
+                                </button>
+                            </div>
+                            <div id="tvCodeDisplayArea" style="display:none;margin-top:14px;padding:12px;background:#111;border-radius:6px;">
+                                <div style="font-size:13px;color:#ccc;">Open <a href="https://www.google.com/device" target="_blank" rel="noopener noreferrer" style="color:#ff4d4d;font-weight:bold;">https://www.google.com/device</a> (or <a href="https://www.youtube.com/tv/activate" target="_blank" rel="noopener noreferrer" style="color:#ff4d4d;">youtube.com/tv/activate</a>) and enter:</div>
+                                <div style="font-size:24px;font-weight:bold;letter-spacing:3px;color:#fff;margin:8px 0;" id="tvUserCodeText">---</div>
+                                <div style="font-size:13px;color:#aaa;" id="tvCodeStatusText">Waiting for activation in browser...</div>
+                            </div>
+                            <div style="margin-top:16px;padding-top:12px;border-top:1px solid #2a2a2a;">
+                                <strong style="font-size:13px;">👤 Linked Jellyfin Users</strong>
+                                <div id="linkedUsersTable" style="margin-top:8px;">Loading users...</div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Library, Server URL & Sync -->
+                        <div style="background:#18181b;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;">
+                            <h3 style="margin-top:0;">Step 2 — Library &amp; Instant Sync</h3>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label class="emby-checkbox-label">
+                                    <input id="chkEnableYouTubeLibrary" type="checkbox" is="emby-checkbox" />
+                                    <span>Enable Native YouTube Video Library &amp; Automatic .strm Sync</span>
+                                </label>
+                            </div>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                                <div class="inputContainer" style="flex:1;min-width:240px;margin-bottom:0;">
+                                    <label class="inputLabel" for="txtPublicServerUrl">Public / LAN Jellyfin URL (for .strm playback on external clients)</label>
+                                    <input id="txtPublicServerUrl" type="url" is="emby-input" placeholder="https://jellyfin.example.com or http://192.168.1.10:8096" />
+                                </div>
+                                <button is="emby-button" type="button" id="btnUseCurrentOrigin" class="raised" style="background:#27272a;color:#fff;border:1px solid #444;">
+                                    <span>🌐 Use Current Browser URL</span>
+                                </button>
+                            </div>
+                            <div style="display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap;">
+                                <button is="emby-button" type="button" id="btnSyncLibraryNow" class="raised button-submit" style="background:#2563eb;color:#fff;">
+                                    <span>⚡ Sync Library Now</span>
+                                </button>
+                                <span id="ytSyncNowStatus" style="font-size:13px;color:#ccc;"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Advanced Settings -->
+                    <details style="background:#141417;border:1px solid #2e2e32;border-radius:8px;padding:12px 16px;margin-bottom:14px;">
+                        <summary style="cursor:pointer;font-weight:bold;font-size:15px;">⚙️ Advanced: Playback, yt-dlp, SponsorBlock &amp; Cache</summary>
+                        <div style="margin-top:14px;">
                             <div class="inputContainer">
-                                <label class="inputLabel" for="txtOAuthClientId">OAuth Client ID</label>
-                                <input id="txtOAuthClientId" type="text" is="emby-input" />
-                                <div class="fieldDescription">Google Cloud OAuth 2.0 Client ID (Application type: "TVs and Limited Input devices").</div>
+                                <label class="inputLabel" for="txtYtDlpPath">yt-dlp Binary Path</label>
+                                <input id="txtYtDlpPath" type="text" is="emby-input" />
+                                <div class="fieldDescription">Path inside container (e.g. <code>/config/bin/yt-dlp</code>).</div>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkAutoDetectYtDlp" type="checkbox" is="emby-checkbox" /><span>Auto-Detect yt-dlp Binary</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnablePrefetch" type="checkbox" is="emby-checkbox" /><span>Enable Speculative Stream Prefetching</span></label>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel" for="txtOAuthClientSecret">OAuth Client Secret</label>
-                                <input id="txtOAuthClientSecret" type="password" is="emby-input" />
-                                <div class="fieldDescription">Google Cloud OAuth 2.0 Client Secret.</div>
+                                <label class="inputLabel" for="txtCacheTtl">Stream Manifest Cache Lifetime (Hours)</label>
+                                <input id="txtCacheTtl" type="number" min="1" max="24" is="emby-input" />
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableStreamingChannel" type="checkbox" is="emby-checkbox" /><span>Enable YouTube Channel in Jellyfin</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnablePublicFallback" type="checkbox" is="emby-checkbox" /><span>Enable Public / Anonymous Mode for Unlinked Users</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableSponsorBlock" type="checkbox" is="emby-checkbox" /><span>Enable SponsorBlock Server-Side Auto-Skip</span></label>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel" for="selectJellyfinUser">Select Jellyfin User to Link</label>
-                                <select is="emby-select" id="selectJellyfinUser"
-                                    class="emby-select-withcolor emby-select"></select>
+                                <label class="inputLabel" for="txtSponsorBlockCategories">SponsorBlock Categories</label>
+                                <input id="txtSponsorBlockCategories" type="text" is="emby-input" />
                             </div>
-                            <button is="emby-button" type="button" id="btnGenerateTvCode" class="raised button-submit"
-                                style="background:#e50914;color:#fff;">
-                                <span>🔑 Generate YouTube TV Activation Code</span>
-                            </button>
-                            <div id="tvCodeDisplayArea"
-                                style="display:none;margin-top:15px;padding:14px;background:#111;border-radius:6px;">
-                                <div style="font-size:14px;color:#ccc;">1. Open <a href="https://www.google.com/device"
-                                        target="_blank"
-                                        style="color:#ff4d4d;font-weight:bold;">https://www.google.com/device</a> (or <a
-                                        href="https://www.youtube.com/tv/activate" target="_blank"
-                                        style="color:#ff4d4d;">youtube.com/tv/activate</a>)</div>
-                                <div style="font-size:24px;font-weight:bold;letter-spacing:3px;color:#fff;margin:10px 0;"
-                                    id="tvUserCodeText">---</div>
-                                <div style="font-size:13px;color:#aaa;" id="tvCodeStatusText">Waiting for activation in
-                                    browser...</div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableRyd" type="checkbox" is="emby-checkbox" /><span>Enable ReturnYouTubeDislike Stats</span></label>
                             </div>
-                        </div>
-
-                        <div
-                            style="background:#18181b;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;">
-                            <h3 style="margin-top:0;">👤 Linked Jellyfin User Accounts</h3>
-                            <div id="linkedUsersTable">Loading users...</div>
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">Playback, yt-dlp &amp; Cache Performance</h2>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtYtDlpPath">yt-dlp Binary Path</label>
-                            <input id="txtYtDlpPath" type="text" is="emby-input" />
-                            <div class="fieldDescription">Path to yt-dlp inside the container (e.g.
-                                <code>/config/bin/yt-dlp</code> or <code>/usr/local/bin/yt-dlp</code>).
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkEnableFavLike" type="checkbox" is="emby-checkbox" /><span>Sync Jellyfin Favorite (♥️) to YouTube Like</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkHideFromContinueWatching" type="checkbox" is="emby-checkbox" /><span>Hide YouTube from Continue Watching</span></label>
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label"><input id="chkHideFromNextUp" type="checkbox" is="emby-checkbox" /><span>Hide YouTube from Next Up</span></label>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="selectMaxRes">Preferred Maximum Resolution</label>
+                                <select is="emby-select" id="selectMaxRes" class="emby-select-withcolor emby-select">
+                                    <option value="2160">4K UHD (2160p)</option>
+                                    <option value="1440">QHD (1440p)</option>
+                                    <option value="1080">Full HD (1080p)</option>
+                                    <option value="720">HD (720p)</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtProxyUrl">SOCKS5 / HTTP Proxy URL</label>
+                                <input id="txtProxyUrl" type="text" is="emby-input" />
                             </div>
                         </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkAutoDetectYtDlp" type="checkbox" is="emby-checkbox" />
-                                <span>Auto-Detect yt-dlp Binary (/config/bin/yt-dlp, /usr/local/bin, PATH)</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnablePrefetch" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Speculative Stream Prefetching (Pre-resolves first 3 videos for instant
-                                    &lt;1.5s playback)</span>
-                            </label>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtCacheTtl">Stream Manifest Cache Lifetime (Hours)</label>
-                            <input id="txtCacheTtl" type="number" min="1" max="24" is="emby-input" />
-                            <div class="fieldDescription">Re-uses extracted stream URLs without re-running yt-dlp
-                                (Default: 6 hours).</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableStreamingChannel" type="checkbox" is="emby-checkbox" />
-                                <span>Enable YouTube Channel in Jellyfin</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnablePublicFallback" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Public / Anonymous Mode for Unlinked Jellyfin Users</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableSponsorBlock" type="checkbox" is="emby-checkbox" />
-                                <span>Enable SponsorBlock Server-Side Auto-Skip (Android TV, Web &amp; Mobile)</span>
-                            </label>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtSponsorBlockCategories">SponsorBlock Categories to
-                                Auto-Skip</label>
-                            <input id="txtSponsorBlockCategories" type="text" is="emby-input" />
-                            <div class="fieldDescription">Comma-separated:
-                                sponsor,selfpromo,interaction,intro,outro,music_offtopic</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableRyd" type="checkbox" is="emby-checkbox" />
-                                <span>Enable ReturnYouTubeDislike Stats &amp; Community Ratings</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableFavLike" type="checkbox" is="emby-checkbox" />
-                                <span>Sync Jellyfin Favorite (♥️) to YouTube Like</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkHideFromContinueWatching" type="checkbox" is="emby-checkbox" />
-                                <span>Hide YouTube &amp; YouTube Music from Continue Watching</span>
-                            </label>
-                            <div class="fieldDescription">Prevents YouTube videos, trailers, and YouTube Music tracks
-                                from appearing under Continue Watching on the Jellyfin home screen.</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkHideFromNextUp" type="checkbox" is="emby-checkbox" />
-                                <span>Hide YouTube from Next Up</span>
-                            </label>
-                            <div class="fieldDescription">Prevents subscribed YouTube channel series/episodes and music
-                                tracks from appearing in the Next Up row on the Jellyfin home screen.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="selectMaxRes">Preferred Maximum Resolution</label>
-                            <select is="emby-select" id="selectMaxRes" class="emby-select-withcolor emby-select">
-                                <option value="2160">4K UHD (2160p)</option>
-                                <option value="1440">QHD (1440p)</option>
-                                <option value="1080">Full HD (1080p)</option>
-                                <option value="720">HD (720p)</option>
-                            </select>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtProxyUrl">SOCKS5 / HTTP Proxy URL</label>
-                            <input id="txtProxyUrl" type="text" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtStrmPath">YouTube .strm Library Path</label>
-                            <input id="txtStrmPath" type="text" is="emby-input" />
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableYouTubeLibrary" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Native YouTube Video Library &amp; Automatic .strm Sync</span>
-                            </label>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtMaxSubscribedChannels">Max Subscribed Channels (0 = Unlimited)</label>
-                            <input id="txtMaxSubscribedChannels" type="number" min="0" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtVideosPerChannel">Videos per Subscribed Channel</label>
-                            <input id="txtVideosPerChannel" type="number" min="1" max="100" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtMaxWatchLaterVideos">Max Watch Later Videos (0 = Unlimited)</label>
-                            <input id="txtMaxWatchLaterVideos" type="number" min="0" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtPriorityChannels">Priority / Favorite Channels (comma-separated names or UC... IDs)</label>
-                            <input id="txtPriorityChannels" type="text" is="emby-input" />
-                            <div class="fieldDescription">Always prioritized first before any channel limit is applied.</div>
-                        </div>
-                    </div>
+                    </details>
 
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">🔍 Jellyfin &amp; AI-Search Integration</h2>
-                        <p>Configure how YouTube search integrates with Jellyfin's native search, Plezy/mobile apps, and
-                            the AI Search plugin.</p>
-
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="selectYtSearchMode">YouTube Search Integration Mode</label>
-                            <select is="emby-select" id="selectYtSearchMode" class="emby-select-withcolor emby-select">
-                                <option value="SearchTab">Search Tab / Row (Separate YouTube results row on web)
-                                </option>
-                                <option value="NativeSearch">Native Search (Plezy / Mobile apps / Universal Jellyfin
-                                    Search)</option>
-                                <option value="Disabled">Disabled (No YouTube search anywhere)</option>
-                            </select>
-                            <div class="fieldDescription">
-                                <strong>Native Search:</strong> Injects YouTube results directly into Jellyfin's native
-                                search API (compatible with Plezy, Infuse, Android TV).<br />
-                                <strong>Search Tab:</strong> Shows a dedicated search tab / modal in the web
-                                interface.<br />
-                                <strong>Disabled:</strong> Completely turns off YouTube search integration.
+                    <details style="background:#141417;border:1px solid #2e2e32;border-radius:8px;padding:12px 16px;margin-bottom:14px;">
+                        <summary style="cursor:pointer;font-weight:bold;font-size:15px;">📁 Advanced: Library Sync, Limits, Language &amp; Primary User</summary>
+                        <div style="margin-top:14px;">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtStrmPath">YouTube .strm Library Path</label>
+                                <input id="txtStrmPath" type="text" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtMaxSubscribedChannels">Max Subscribed Channels (0 = Unlimited)</label>
+                                <input id="txtMaxSubscribedChannels" type="number" min="0" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtVideosPerChannel">Videos per Subscribed Channel</label>
+                                <input id="txtVideosPerChannel" type="number" min="1" max="100" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtMaxWatchLaterVideos">Max Watch Later Videos (0 = Unlimited)</label>
+                                <input id="txtMaxWatchLaterVideos" type="number" min="0" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtPriorityChannels">Priority / Favorite Channels (comma-separated names or UC... IDs)</label>
+                                <input id="txtPriorityChannels" type="text" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtPrimaryUser">Primary Jellyfin Username</label>
+                                <input id="txtPrimaryUser" type="text" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtPreferredLang">Preferred Language / Locale (e.g. de-DE, en-US)</label>
+                                <input id="txtPreferredLang" type="text" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtPreferredRegion">Preferred Region Code (e.g. DE, US)</label>
+                                <input id="txtPreferredRegion" type="text" is="emby-input" />
                             </div>
                         </div>
+                    </details>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkShowYtInGlobalSearch" type="checkbox" is="emby-checkbox" />
-                                <span>Show YouTube Library in Global Search without "youtube"/"yt" Keyword</span>
-                            </label>
-                            <div class="fieldDescription">Default: OFF (Anti-Clutter). When disabled, YouTube items only
-                                appear in searches if "youtube" or "yt" is explicitly typed.</div>
+                    <details style="background:#141417;border:1px solid #2e2e32;border-radius:8px;padding:12px 16px;margin-bottom:14px;">
+                        <summary style="cursor:pointer;font-weight:bold;font-size:15px;">🔍 Advanced: Search Integration &amp; Channel Tabs</summary>
+                        <div style="margin-top:14px;">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="selectYtSearchMode">YouTube Search Integration Mode</label>
+                                <select is="emby-select" id="selectYtSearchMode" class="emby-select-withcolor emby-select">
+                                    <option value="SearchTab">Search Tab / Row</option>
+                                    <option value="NativeSearch">Native Search</option>
+                                    <option value="Disabled">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkShowYtInGlobalSearch" type="checkbox" is="emby-checkbox" /><span>Show YouTube Library in Global Search without keyword</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkYtSearchOnNoResults" type="checkbox" is="emby-checkbox" /><span>Fallback YouTube Search when 0 Local Results Found</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkYtSuppressAi" type="checkbox" is="emby-checkbox" /><span>Suppress AI-Search when "youtube"/"yt" detected</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkYtShowNonLocal" type="checkbox" is="emby-checkbox" /><span>Include Non-Local YouTube Results</span></label></div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="txtYtSearchMaxResults">Max YouTube Search Results</label>
+                                <input id="txtYtSearchMaxResults" type="number" is="emby-input" min="1" max="50" />
+                            </div>
+                            <hr style="border-color:#2e2e32;margin:14px 0;" />
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableSubsFeed" type="checkbox" is="emby-checkbox" /><span>📺 Subscriptions (Feed)</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableSubChannels" type="checkbox" is="emby-checkbox" /><span>👤 Subscribed Channels (A–Z)</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableHistory" type="checkbox" is="emby-checkbox" /><span>▶️ History &amp; Resume</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableLiked" type="checkbox" is="emby-checkbox" /><span>👍 Liked Videos</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableWatchLater" type="checkbox" is="emby-checkbox" /><span>⏱️ Watch Later</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnablePlaylists" type="checkbox" is="emby-checkbox" /><span>📁 Playlists</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableRecommendations" type="checkbox" is="emby-checkbox" /><span>🏠 Home &amp; Recommendations</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableTrending" type="checkbox" is="emby-checkbox" /><span>🔥 Trending</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableGaming" type="checkbox" is="emby-checkbox" /><span>🎮 Gaming</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableMusicCat" type="checkbox" is="emby-checkbox" /><span>🎵 Music Category</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableLive" type="checkbox" is="emby-checkbox" /><span>🔴 Live Streams</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableTrailersCat" type="checkbox" is="emby-checkbox" /><span>🎬 Movie &amp; TV Trailers</span></label></div>
                         </div>
+                    </details>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkYtSearchOnNoResults" type="checkbox" is="emby-checkbox" />
-                                <span>Fallback YouTube Search when 0 Local Results Found</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. If a local Jellyfin search returns no hits,
-                                automatically trigger a YouTube search.</div>
+                    <details style="background:#141417;border:1px solid #2e2e32;border-radius:8px;padding:12px 16px;margin-bottom:18px;">
+                        <summary style="cursor:pointer;font-weight:bold;font-size:15px;">🎵 Advanced: YouTube Music, Trailers &amp; Local Archives</summary>
+                        <div style="margin-top:14px;">
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableYtm" type="checkbox" is="emby-checkbox" /><span>Enable YouTube Music Integration</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableYtmChannel" type="checkbox" is="emby-checkbox" /><span>Enable YouTube Music Channel</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableYtmLibrary" type="checkbox" is="emby-checkbox" /><span>Enable Dedicated "YouTube Music" Native Audio Library</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableYtmPlaylistsSync" type="checkbox" is="emby-checkbox" /><span>Sync YouTube Music Feeds &amp; Playlists</span></label></div>
+                            <div class="inputContainer"><label class="inputLabel" for="txtYtmLibraryPath">YouTube Music Audio .strm Library Path</label><input id="txtYtmLibraryPath" type="text" is="emby-input" /></div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="selectYtmBitrate">Preferred YouTube Music Audio Bitrate</label>
+                                <select is="emby-select" id="selectYtmBitrate" class="emby-select-withcolor emby-select">
+                                    <option value="256">High Quality (256 kbps AAC / Opus)</option>
+                                    <option value="192">Standard High (192 kbps)</option>
+                                    <option value="128">Data Saver (128 kbps)</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer"><label class="inputLabel" for="txtYtmMaxItems">Max Tracks per YouTube Music Feed / Playlist</label><input id="txtYtmMaxItems" type="number" min="5" max="100" is="emby-input" /></div>
+                            <hr style="border-color:#2e2e32;margin:14px 0;" />
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableTrailers" type="checkbox" is="emby-checkbox" /><span>Enable Native Movie &amp; TV Trailer Playback Support</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableAutoTrailerSync" type="checkbox" is="emby-checkbox" /><span>Automatically Sync Companion .trailer.strm Files</span></label></div>
+                            <div class="inputContainer"><label class="inputLabel" for="txtTrailerLang">Preferred Trailer Search Language</label><input id="txtTrailerLang" type="text" is="emby-input" /></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableLocalMetadata" type="checkbox" is="emby-checkbox" /><span>Enable Local .info.json Metadata Provider</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableMusicVideo" type="checkbox" is="emby-checkbox" /><span>Enable Music Video Library Provider</span></label></div>
+                            <div class="checkboxContainer"><label class="emby-checkbox-label"><input id="chkEnableEpisodeIndexer" type="checkbox" is="emby-checkbox" /><span>Chronological Episode &amp; Season Indexer</span></label></div>
                         </div>
+                    </details>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkYtSuppressAi" type="checkbox" is="emby-checkbox" />
-                                <span>Suppress AI-Search when "youtube" / "yt" Keyword Detected</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. When the user explicitly searches for YouTube
-                                content, skip AI Search to deliver fast, direct YouTube results.</div>
-                        </div>
-
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkYtShowNonLocal" type="checkbox" is="emby-checkbox" />
-                                <span>Include Non-Local YouTube Results (Streamable Online Videos)</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. Surfaces streamable online YouTube videos even if
-                                they are not stored in your local Jellyfin library.</div>
-                        </div>
-
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtYtSearchMaxResults">Max YouTube Search Results</label>
-                            <input id="txtYtSearchMaxResults" type="number" is="emby-input" min="1" max="50" />
-                            <div class="fieldDescription">Default: 15. Maximum number of YouTube search results returned
-                                per query.</div>
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">📺 Navigation &amp; Channel Categories (Anti-Clutter Filter)
-                        </h2>
-                        <p>Select which tabs are displayed in the YouTube channel. Clutter-heavy categories (such as
-                            Trends &amp; Recommendations) are <strong>disabled by default</strong> to keep the media
-                            library clean and fast.</p>
-
-                        <div
-                            style="background:#18181b;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:15px;">
-                            <h4 style="margin-top:0;color:#4cd964;">✅ Core Navigation (Enabled by Default)</h4>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableSubsFeed" type="checkbox" is="emby-checkbox" />
-                                    <span>📺 Subscriptions (Feed) — Chronological feed of latest uploads from subscribed
-                                        channels</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableSubChannels" type="checkbox" is="emby-checkbox" />
-                                    <span>👤 Subscribed Channels (A–Z) — Channel folders with channel avatars</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableHistory" type="checkbox" is="emby-checkbox" />
-                                    <span>▶️ History &amp; Resume — Resume playback and browse YouTube watch
-                                        history</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableLiked" type="checkbox" is="emby-checkbox" />
-                                    <span>👍 Liked Videos — Playlist with your liked videos</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableWatchLater" type="checkbox" is="emby-checkbox" />
-                                    <span>⏱️ Watch Later — Personal YouTube Watch Later playlist</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnablePlaylists" type="checkbox" is="emby-checkbox" />
-                                    <span>📁 Playlists — Personal and saved YouTube playlists</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div style="background:#18181b;border:1px solid #444;border-radius:8px;padding:16px;">
-                            <h4 style="margin-top:0;color:#ff9800;">⚙️ Additional Tabs (Disabled by Default to Prevent
-                                Clutter)</h4>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableRecommendations" type="checkbox" is="emby-checkbox" />
-                                    <span>🏠 Home &amp; Recommendations — Algorithmic recommendation feed</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableTrending" type="checkbox" is="emby-checkbox" />
-                                    <span>🔥 Trending — Regionally trending videos</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableGaming" type="checkbox" is="emby-checkbox" />
-                                    <span>🎮 Gaming — Gaming streams and highlight videos</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableMusicCat" type="checkbox" is="emby-checkbox" />
-                                    <span>🎵 Music Category — Music videos and YouTube Music channel folder</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableLive" type="checkbox" is="emby-checkbox" />
-                                    <span>🔴 Live Streams — Active live broadcasts</span>
-                                </label>
-                            </div>
-                            <div class="checkboxContainer checkboxContainer-withDescription">
-                                <label class="emby-checkbox-label">
-                                    <input id="chkEnableTrailersCat" type="checkbox" is="emby-checkbox" />
-                                    <span>🎬 Movie &amp; TV Trailers — Display current trailers in channel</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">🎵 YouTube Music Integration (Optional — Enabled by Default)</h2>
-                        <p>Integrates YouTube Music as both a native Jellyfin Music Channel and a dedicated Jellyfin
-                            Music Library with audio-only HQ streaming (AAC/M4A), mapped automatically to the primary
-                            account and optionally available to other users via Public Mode or self-service TV Code
-                            login.</p>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableYtm" type="checkbox" is="emby-checkbox" />
-                                <span>Enable YouTube Music Integration (Master Switch — Default: ON)</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableYtmChannel" type="checkbox" is="emby-checkbox" />
-                                <span>Enable YouTube Music Channel in Jellyfin (Supermix, Liked Songs, Listen Again,
-                                    Playlists &amp; Charts)</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableYtmLibrary" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Dedicated "YouTube Music" Native Audio Library in Jellyfin</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableYtmPlaylistsSync" type="checkbox" is="emby-checkbox" />
-                                <span>Sync YouTube Music Feeds &amp; Playlists into Native Jellyfin Audio
-                                    Playlists</span>
-                            </label>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtYtmLibraryPath">YouTube Music Audio .strm Library
-                                Path</label>
-                            <input id="txtYtmLibraryPath" type="text" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="selectYtmBitrate">Preferred YouTube Music Audio
-                                Bitrate</label>
-                            <select is="emby-select" id="selectYtmBitrate" class="emby-select-withcolor emby-select">
-                                <option value="256">High Quality (256 kbps AAC / Opus)</option>
-                                <option value="192">Standard High (192 kbps)</option>
-                                <option value="128">Data Saver (128 kbps)</option>
-                            </select>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtYtmMaxItems">Max Tracks per YouTube Music Feed /
-                                Playlist</label>
-                            <input id="txtYtmMaxItems" type="number" min="5" max="100" is="emby-input" />
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">🎬 Movie &amp; TV Series Trailers (Emby Cinema Mode Parity)</h2>
-                        <p>Provides native, 1-click YouTube trailer playback for all Movies and TV Series in Jellyfin
-                            libraries. Automatically creates lightweight companion <code>-trailer.strm</code> files and
-                            resolves TMDb remote trailers anonymously as guest with zero user-account scrobbling or
-                            history pollution.</p>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableTrailers" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Native Movie &amp; TV Trailer Playback Support (Default: ON)</span>
-                            </label>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableAutoTrailerSync" type="checkbox" is="emby-checkbox" />
-                                <span>Automatically Sync Companion .trailer.strm Files for Movies &amp; Series</span>
-                            </label>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtTrailerLang">Preferred Trailer Search Language (e.g.
-                                de-DE, en-US)</label>
-                            <input id="txtTrailerLang" type="text" is="emby-input" />
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">📁 Local Archive &amp; Offline Metadata Integration</h2>
-                        <p>Seamlessly catalog and enrich downloaded YouTube archives, channel backups, and music video libraries. Provides instant zero-quota metadata extraction from local <code>.info.json</code> companion files, native Music Video library integration, and automatic chronological episode reindexing.</p>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableLocalMetadata" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Local .info.json Metadata Provider (Zero-Quota Offline Scraper)</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. Automatically reads metadata, descriptions, tags, and ratings from adjacent <code>.info.json</code> files generated by download utilities such as <code>yt-dlp</code>.</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableMusicVideo" type="checkbox" is="emby-checkbox" />
-                                <span>Enable Music Video Library Provider (Dedicated Music Video Collections)</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. Resolves rich metadata, artist tagging, and high-definition artwork for Jellyfin libraries configured as "Music Videos".</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkEnableEpisodeIndexer" type="checkbox" is="emby-checkbox" />
-                                <span>Chronological Episode &amp; Season Indexer (Library Post-Scan Task)</span>
-                            </label>
-                            <div class="fieldDescription">Default: ON. Automatically sequences channel archives into chronological season and episode numbers (S01E01..) ordered by original YouTube publish dates.</div>
-                        </div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <h2 class="sectionTitle">🌐 Universal Multi-User &amp; Primary Account Settings</h2>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtPrimaryUser">Primary Jellyfin Username (Auto-Mapped to
-                                Seeded Account)</label>
-                            <input id="txtPrimaryUser" type="text" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtPreferredLang">Preferred Language / Locale (e.g. de-DE,
-                                en-US)</label>
-                            <input id="txtPreferredLang" type="text" is="emby-input" />
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="txtPreferredRegion">Preferred Region Code (e.g. DE, US, AT,
-                                CH)</label>
-                            <input id="txtPreferredRegion" type="text" is="emby-input" />
-                        </div>
-                        <div>
-                            <button is="emby-button" type="submit" class="raised button-submit block">
-                                <span>Save Settings</span>
-                            </button>
-                        </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>💾 Save Settings</span>
+                        </button>
                     </div>
                 </form>
             </div>
@@ -489,6 +275,34 @@
                     return fetch(url, options);
                 }
 
+                function createBadge(ok, label) {
+                    var span = document.createElement("span");
+                    span.style.cssText = "padding:4px 10px;border-radius:999px;font-size:12px;font-weight:bold;border:1px solid " + (ok ? "#2e7d32;background:rgba(76,217,100,0.12);color:#4cd964;" : "#b71c1c;background:rgba(255,77,77,0.12);color:#ff6b6b;");
+                    span.textContent = (ok ? "✅ " : "⚠️ ") + label;
+                    return span;
+                }
+
+                async function loadDiagnostics() {
+                    var container = document.getElementById("ytDiagBadges");
+                    try {
+                        var res = await authFetch("/api/youtubePlugin/diagnostics");
+                        if (!res.ok) {
+                            container.textContent = "Diagnostics unavailable (HTTP " + res.status + ")";
+                            return;
+                        }
+                        var d = await res.json();
+                        container.replaceChildren(
+                            createBadge(d.oauthConfigured, d.oauthConfigured ? "OAuth Configured" : "OAuth Missing"),
+                            createBadge(d.ytDlpFound, d.ytDlpFound ? "yt-dlp Ready" : "yt-dlp Missing (" + d.ytDlpPath + ")"),
+                            createBadge(d.linkedUsersCount > 0, d.linkedUsersCount + " Linked Account(s)"),
+                            createBadge(d.strmPathWritable, d.strmPathWritable ? "Library Path OK" : "Library Path Error"),
+                            createBadge(d.publicServerUrlConfigured, d.publicServerUrlConfigured ? "Public URL Set" : "Public URL Not Set (Optional)")
+                        );
+                    } catch (e) {
+                        container.textContent = "Diagnostics error: " + (e && e.message ? e.message : "Unknown");
+                    }
+                }
+
                 async function loadUsersList() {
                     try {
                         var res = await authFetch("/api/youtubePlugin/users");
@@ -505,7 +319,7 @@
                             sel.appendChild(opt);
 
                             var row = document.createElement("div");
-                            row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;";
+                            row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;gap:8px;flex-wrap:wrap;";
                             var left = document.createElement("div");
                             var strong = document.createElement("strong");
                             strong.textContent = u.username;
@@ -522,6 +336,21 @@
                             left.appendChild(sep);
                             left.appendChild(status);
                             row.appendChild(left);
+
+                            if (u.isLinked) {
+                                var unlinkBtn = document.createElement("button");
+                                unlinkBtn.type = "button";
+                                unlinkBtn.textContent = "Unlink";
+                                unlinkBtn.style.cssText = "background:#3f3f46;color:#fff;border:1px solid #555;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;";
+                                unlinkBtn.addEventListener("click", async function () {
+                                    unlinkBtn.disabled = true;
+                                    await authFetch("/api/youtubePlugin/users/" + encodeURIComponent(u.username), { method: "DELETE" });
+                                    await loadUsersList();
+                                    await loadDiagnostics();
+                                });
+                                row.appendChild(unlinkBtn);
+                            }
+
                             rowEls.push(row);
                         });
                         if (rowEls.length > 0) {
@@ -534,12 +363,47 @@
                     }
                 }
 
+                document.getElementById("btnRefreshDiag").addEventListener("click", function () {
+                    loadDiagnostics();
+                    loadUsersList();
+                });
+
+                document.getElementById("btnUseCurrentOrigin").addEventListener("click", function () {
+                    document.getElementById("txtPublicServerUrl").value = window.location.origin;
+                });
+
+                document.getElementById("btnSyncLibraryNow").addEventListener("click", async function () {
+                    var btn = document.getElementById("btnSyncLibraryNow");
+                    var st = document.getElementById("ytSyncNowStatus");
+                    btn.disabled = true;
+                    st.style.color = "#ccc";
+                    st.textContent = "Syncing YouTube library...";
+                    try {
+                        var res = await authFetch("/api/youtubePlugin/library/sync", { method: "POST" });
+                        if (res.ok) {
+                            var data = await res.json();
+                            st.style.color = "#4cd964";
+                            st.textContent = "✅ Synced (" + (data.videosSynced ?? 0) + " new/updated items) & queued library scan.";
+                        } else {
+                            st.style.color = "#ff6b6b";
+                            st.textContent = "❌ Sync failed (HTTP " + res.status + ")";
+                        }
+                    } catch (e) {
+                        st.style.color = "#ff6b6b";
+                        st.textContent = "❌ Sync error: " + (e && e.message ? e.message : "Unknown");
+                    } finally {
+                        btn.disabled = false;
+                    }
+                });
+
                 document.getElementById("YouTubeConfigPage").addEventListener("pageshow", function () {
                     Dashboard.showLoadingMsg();
+                    loadDiagnostics();
                     loadUsersList();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         document.getElementById("txtOAuthClientId").value = config.OAuthClientId || "";
                         document.getElementById("txtOAuthClientSecret").value = config.OAuthClientSecret || "";
+                        document.getElementById("txtPublicServerUrl").value = config.PublicServerUrl || "";
                         document.getElementById("txtYtDlpPath").value = config.YtDlpPath || "/config/bin/yt-dlp";
                         document.getElementById("chkAutoDetectYtDlp").checked = config.AutoDetectYtDlp !== false;
                         document.getElementById("chkEnablePrefetch").checked = config.EnableSpeculativePrefetch !== false;
@@ -603,21 +467,22 @@
                 });
 
                 document.getElementById("btnGenerateTvCode").addEventListener("click", async function () {
-                    if (pollTimer) {clearInterval(pollTimer); pollTimer = null;}
+                    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
                     var sel = document.getElementById("selectJellyfinUser");
                     var jfUser = sel.value || "";
                     var jfUid = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute("data-uid") : "";
 
-                    var res = await authFetch("/api/youtubePlugin/auth/device-code", {method: "POST"});
+                    var res = await authFetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
                     var data = await res.json();
                     document.getElementById("tvCodeDisplayArea").style.display = "block";
                     document.getElementById("tvUserCodeText").textContent = data.user_code || "ERROR";
+                    document.getElementById("tvCodeStatusText").style.color = "#aaa";
                     document.getElementById("tvCodeStatusText").textContent = "Waiting for you to enter the code for Jellyfin user '" + jfUser + "'...";
 
                     if (data.device_code) {
                         pollTimer = setInterval(async function () {
                             try {
-                                var pr = await authFetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfUser) + "&jellyfinUserId=" + encodeURIComponent(jfUid || ""), {method: "POST"});
+                                var pr = await authFetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfUser) + "&jellyfinUserId=" + encodeURIComponent(jfUid || ""), { method: "POST" });
                                 var pd = await pr.json();
                                 if (pd.success) {
                                     clearInterval(pollTimer);
@@ -625,6 +490,7 @@
                                     document.getElementById("tvCodeStatusText").style.color = "#4cd964";
                                     document.getElementById("tvCodeStatusText").textContent = "✅ Linked YouTube account '" + pd.accountName + "' to Jellyfin user '" + pd.jellyfinUser + "'!";
                                     loadUsersList();
+                                    loadDiagnostics();
                                 } else if (pd.pending === false) {
                                     clearInterval(pollTimer);
                                     pollTimer = null;
@@ -642,6 +508,7 @@
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         config.OAuthClientId = document.getElementById("txtOAuthClientId").value.trim();
                         config.OAuthClientSecret = document.getElementById("txtOAuthClientSecret").value.trim();
+                        config.PublicServerUrl = document.getElementById("txtPublicServerUrl").value.trim();
                         config.YtDlpPath = document.getElementById("txtYtDlpPath").value.trim() || "/config/bin/yt-dlp";
                         config.AutoDetectYtDlp = document.getElementById("chkAutoDetectYtDlp").checked;
                         config.EnableSpeculativePrefetch = document.getElementById("chkEnablePrefetch").checked;
@@ -705,6 +572,7 @@
                         config.PreferredRegion = document.getElementById("txtPreferredRegion").value.trim() || "US";
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
+                            loadDiagnostics();
                         });
                     });
                     return false;

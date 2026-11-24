@@ -18,6 +18,15 @@
 
 ---
 
+## ⚡ Quick Setup (3-Minute Guide)
+
+1. **Open Plugin Settings**: In Jellyfin Dashboard → **Plugins** → **YouTube**.
+2. **Check Live Readiness**: The top **Live Readiness Checklist** shows whether `OAuth`, `yt-dlp`, `Linked Accounts`, and `Library Path` are ready.
+3. **Link Account (Step 1)**: Enter your Google Cloud OAuth 2.0 Client ID/Secret (*TVs and Limited Input devices*), select a Jellyfin user, click **🔑 Generate TV Activation Code**, and confirm at `google.com/device`. Non-admin users can also self-link/unlink anytime via **▶ YT / 🎵 Music → 🔑 My YouTube Account** in the Web UI header.
+4. **Sync & Stream (Step 2)**: Set your **Public / LAN Jellyfin URL** (or click **🌐 Use Current Browser URL**), then click **⚡ Sync Library Now**.
+
+---
+
 ## 📖 Table of Contents
 
 1. [Overview & Core Philosophy](#-overview--core-philosophy)
