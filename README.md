@@ -25,6 +25,18 @@
 3. **Link Account (Step 1)**: Enter your Google Cloud OAuth 2.0 Client ID/Secret (*TVs and Limited Input devices*), select a Jellyfin user, click **🔑 Generate TV Activation Code**, and confirm at `google.com/device`. Non-admin users can also self-link/unlink anytime via **▶ YT / 🎵 Music → 🔑 My YouTube Account** in the Web UI header.
 4. **Sync & Stream (Step 2)**: Set your **Public / LAN Jellyfin URL** (or click **🌐 Use Current Browser URL**), then click **⚡ Sync Library Now**.
 
+### Google Cloud OAuth & API Permissions
+
+When using your own Google Cloud project for OAuth 2.0:
+
+1. **Enable API**: Enable **YouTube Data API v3** (`youtube.googleapis.com`) in **APIs & Services → Library** (`https://console.cloud.google.com/apis/library/youtube.googleapis.com`).
+2. **OAuth Consent Screen (`Google Auth Platform`)**:
+   - **Application Type**: External (or Internal for Google Workspace). If left in **Testing** mode, add each Google account under **Audience → Test users**.
+   - **Required Scopes (`Data Access`)**:
+     - `https://www.googleapis.com/auth/youtube` — Read/write access (playlists, subscriptions, and two-way Favorite-to-Like sync).
+     - `https://www.googleapis.com/auth/youtube.readonly` — Read-only fallback (feeds, liked videos, subscriptions).
+3. **OAuth 2.0 Client**: Create a client of type **TVs and Limited Input devices** under **Clients** and copy its Client ID & Client Secret into the plugin settings.
+
 ---
 
 ## 📖 Table of Contents
