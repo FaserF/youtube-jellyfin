@@ -165,6 +165,23 @@
                                 <span>Enable Native YouTube Video Library &amp; Automatic .strm Sync</span>
                             </label>
                         </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtMaxSubscribedChannels">Max Subscribed Channels (0 = Unlimited)</label>
+                            <input id="txtMaxSubscribedChannels" type="number" min="0" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtVideosPerChannel">Videos per Subscribed Channel</label>
+                            <input id="txtVideosPerChannel" type="number" min="1" max="100" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtMaxWatchLaterVideos">Max Watch Later Videos (0 = Unlimited)</label>
+                            <input id="txtMaxWatchLaterVideos" type="number" min="0" is="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtPriorityChannels">Priority / Favorite Channels (comma-separated names or UC... IDs)</label>
+                            <input id="txtPriorityChannels" type="text" is="emby-input" />
+                            <div class="fieldDescription">Always prioritized first before any channel limit is applied.</div>
+                        </div>
                     </div>
 
                     <div class="verticalSection">
@@ -561,6 +578,10 @@
                         document.getElementById("txtProxyUrl").value = config.ProxyUrl || "";
                         document.getElementById("txtStrmPath").value = config.StrmLibraryPath || "/data/youtube";
                         document.getElementById("chkEnableYouTubeLibrary").checked = config.EnableYouTubeLibrary !== false;
+                        document.getElementById("txtMaxSubscribedChannels").value = String(config.MaxSubscribedChannels ?? 0);
+                        document.getElementById("txtVideosPerChannel").value = String(config.VideosPerSubscribedChannel || 15);
+                        document.getElementById("txtMaxWatchLaterVideos").value = String(config.MaxWatchLaterVideos ?? 50);
+                        document.getElementById("txtPriorityChannels").value = config.PriorityChannels || "";
                         document.getElementById("chkEnableYtm").checked = config.EnableYouTubeMusic !== false;
                         document.getElementById("chkEnableYtmChannel").checked = config.EnableYouTubeMusicChannel !== false;
                         document.getElementById("chkEnableYtmLibrary").checked = config.EnableYouTubeMusicLibrary !== false;
@@ -659,6 +680,12 @@
                         config.ProxyUrl = document.getElementById("txtProxyUrl").value.trim();
                         config.StrmLibraryPath = document.getElementById("txtStrmPath").value.trim();
                         config.EnableYouTubeLibrary = document.getElementById("chkEnableYouTubeLibrary").checked;
+                        var maxSubVal = parseInt(document.getElementById("txtMaxSubscribedChannels").value, 10);
+                        config.MaxSubscribedChannels = isNaN(maxSubVal) || maxSubVal < 0 ? 0 : maxSubVal;
+                        config.VideosPerSubscribedChannel = parseInt(document.getElementById("txtVideosPerChannel").value, 10) || 15;
+                        var maxWlVal = parseInt(document.getElementById("txtMaxWatchLaterVideos").value, 10);
+                        config.MaxWatchLaterVideos = isNaN(maxWlVal) || maxWlVal < 0 ? 0 : maxWlVal;
+                        config.PriorityChannels = document.getElementById("txtPriorityChannels").value.trim();
                         config.EnableStrmSync = document.getElementById("chkEnableYouTubeLibrary").checked;
                         config.EnableYouTubeMusic = document.getElementById("chkEnableYtm").checked;
                         config.EnableYouTubeMusicChannel = document.getElementById("chkEnableYtmChannel").checked;

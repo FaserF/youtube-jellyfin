@@ -193,7 +193,9 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         // Subscribed Channels Folder (A-Z)
         if (query.FolderId == "cat_channels")
         {
-            var channels = await client.GetSubscribedChannelsAsync(effectiveUserKey, 50, cancellationToken).ConfigureAwait(false);
+            var maxChannels = config.MaxSubscribedChannels > 0 ? config.MaxSubscribedChannels : 0;
+            var channels = await client.GetSubscribedChannelsAsync(effectiveUserKey, maxChannels, cancellationToken).ConfigureAwait(false);
+            channels = ScheduledTasks.SyncYouTubeStrmTask.PrioritizeChannels(channels, config.PriorityChannels, maxChannels);
             foreach (var ch in channels)
             {
                 var folder = new ChannelItemInfo
@@ -215,10 +217,11 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
         if (query.FolderId.StartsWith("chan_", StringComparison.Ordinal))
         {
             var channelId = query.FolderId["chan_".Length..];
-            var videos = await client.GetChannelRssFeedAsync(channelId, 25, cancellationToken).ConfigureAwait(false);
+            var videosPerChannel = config.VideosPerSubscribedChannel > 0 ? config.VideosPerSubscribedChannel : 50;
+            var videos = await client.GetChannelRssFeedAsync(channelId, videosPerChannel, cancellationToken).ConfigureAwait(false);
             if (videos.Count == 0)
             {
-                videos = await client.GetBrowseFeedAsync(channelId, effectiveUserKey, 25, cancellationToken).ConfigureAwait(false);
+                videos = await client.GetBrowseFeedAsync(channelId, effectiveUserKey, videosPerChannel, cancellationToken).ConfigureAwait(false);
             }
 
             var mapped = await EnrichAndMapVideosAsync(client, videos, cancellationToken).ConfigureAwait(false);

@@ -69,6 +69,10 @@ public class PluginConfiguration : BasePluginConfiguration
         PersistedAccessToken = string.Empty;
         PersistedTokenExpiresAtUnix = 0;
         CookiesText = string.Empty;
+        MaxSubscribedChannels = 0;
+        VideosPerSubscribedChannel = 15;
+        MaxWatchLaterVideos = 50;
+        PriorityChannels = string.Empty;
         UserAccounts = new List<YouTubeUserAccountEntry>();
     }
 
@@ -135,6 +139,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public string PersistedAccessToken { get; set; }
     public long PersistedTokenExpiresAtUnix { get; set; }
     public string CookiesText { get; set; }
+    public int MaxSubscribedChannels { get; set; }
+    public int VideosPerSubscribedChannel { get; set; }
+    public int MaxWatchLaterVideos { get; set; }
+    public string PriorityChannels { get; set; }
     public List<YouTubeUserAccountEntry> UserAccounts { get; set; }
 
     public YouTubeUserAccountEntry? GetAccountForUser(string? usernameOrId)

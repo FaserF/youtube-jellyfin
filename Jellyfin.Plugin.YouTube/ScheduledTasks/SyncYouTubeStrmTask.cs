@@ -58,13 +58,15 @@ public class SyncYouTubeStrmTask : IScheduledTask
         var primaryUser = !string.IsNullOrWhiteSpace(config.PrimaryJellyfinUser) ? config.PrimaryJellyfinUser : null;
         var totalAdded = 0;
 
+        var watchLaterLimit = config.MaxWatchLaterVideos > 0 ? config.MaxWatchLaterVideos : 200;
+
         // 1. Sync SmartTube Virtual Feed Categories as top-level Shows so they appear at the top of the YouTube Library
         var feedSections = new (string BrowseId, string FolderName, int Limit)[]
         {
             ("FEwhat_to_watch", "01 - Home & Empfehlungen", 25),
             ("FEsubscriptions", "02 - Abo-Feed (Neueste Videos)", 30),
             ("FEhistory", "03 - Weiteransehen & Verlauf", 25),
-            ("VLWL", "04 - Später ansehen (Watch Later)", 25),
+            ("VLWL", "04 - Später ansehen (Watch Later)", watchLaterLimit),
             ("VLLV", "05 - Videos, die ich mag (Liked)", 25),
             ("FEtrending", "06 - Trends (Deutschland)", 20)
         };
@@ -117,7 +119,10 @@ public class SyncYouTubeStrmTask : IScheduledTask
         }
 
         // 2. Sync Subscribed Channels (A-Z) as individual Series folders
-        var channels = await client.GetSubscribedChannelsAsync(primaryUser, 60, cancellationToken).ConfigureAwait(false);
+        var maxChannels = config.MaxSubscribedChannels > 0 ? config.MaxSubscribedChannels : 0;
+        var videosPerChannel = config.VideosPerSubscribedChannel > 0 ? config.VideosPerSubscribedChannel : 50;
+        var channels = await client.GetSubscribedChannelsAsync(primaryUser, maxChannels, cancellationToken).ConfigureAwait(false);
+        channels = PrioritizeChannels(channels, config.PriorityChannels, maxChannels);
         var syncedChannelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var ch in channels)
@@ -129,7 +134,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
             var seasonDir = Path.Combine(chanDir, "Season 01");
             Directory.CreateDirectory(seasonDir);
 
-            var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, 15, cancellationToken).ConfigureAwait(false);
+            var videos = await client.GetChannelRssFeedAsync(ch.ChannelId, videosPerChannel, cancellationToken).ConfigureAwait(false);
             totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken, skipPrune).ConfigureAwait(false);
         }
 
@@ -150,7 +155,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
                         {
                             var seasonDir = Path.Combine(cDir, "Season 01");
                             Directory.CreateDirectory(seasonDir);
-                            var videos = await client.GetChannelRssFeedAsync(cid, 15, cancellationToken).ConfigureAwait(false);
+                            var videos = await client.GetChannelRssFeedAsync(cid, videosPerChannel, cancellationToken).ConfigureAwait(false);
                             if (videos.Count > 0)
                             {
                                 totalAdded += await WriteStrmVideosAsync(seasonDir, videos, config, cancellationToken, skipPrune).ConfigureAwait(false);
@@ -466,6 +471,44 @@ public class SyncYouTubeStrmTask : IScheduledTask
         // Never split a UTF-16 surrogate pair at the truncation boundary (would leave an unpaired surrogate in filenames/NFO XML).
         var cut = char.IsHighSurrogate(cleaned[89]) ? 89 : 90;
         return cleaned[..cut].Trim();
+    }
+
+    public static List<YouTubeChannelItem> PrioritizeChannels(
+        List<YouTubeChannelItem> channels,
+        string? priorityChannelsCsv,
+        int maxLimit)
+    {
+        var priorityTokens = (priorityChannelsCsv ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToList();
+
+        List<YouTubeChannelItem> ordered;
+        if (priorityTokens.Count == 0)
+        {
+            ordered = channels;
+        }
+        else
+        {
+            var prioritySet = new HashSet<string>(priorityTokens, StringComparer.OrdinalIgnoreCase);
+            var prioritized = new List<YouTubeChannelItem>();
+            var rest = new List<YouTubeChannelItem>();
+            foreach (var ch in channels)
+            {
+                if (prioritySet.Contains(ch.ChannelId) || prioritySet.Contains(ch.Title))
+                {
+                    prioritized.Add(ch);
+                }
+                else
+                {
+                    rest.Add(ch);
+                }
+            }
+
+            ordered = [.. prioritized, .. rest];
+        }
+
+        return maxLimit > 0 && ordered.Count > maxLimit ? ordered.Take(maxLimit).ToList() : ordered;
     }
 
     public static string SanitizeXmlText(string? text)

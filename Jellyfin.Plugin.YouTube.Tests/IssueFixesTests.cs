@@ -157,4 +157,24 @@ public class IssueFixesTests
         playlists.First(p => p.PlaylistId == "PLPrivateCreated123").Title.Should().Be("My Private Playlist");
         playlists.First(p => p.PlaylistId == "PLSavedFromOther456").ItemCount.Should().Be(42);
     }
+
+    [Fact]
+    public void PrioritizeChannels_ShouldKeepPriorityChannelsFirst_AndRespectZeroAsUnlimited()
+    {
+        var channels = new List<Jellyfin.Plugin.YouTube.Models.YouTubeChannelItem>
+        {
+            new() { ChannelId = "UC1", Title = "Alpha" },
+            new() { ChannelId = "UC2", Title = "Beta" },
+            new() { ChannelId = "UC3", Title = "Gamma" },
+            new() { ChannelId = "UC4", Title = "Delta" }
+        };
+
+        var capped = Jellyfin.Plugin.YouTube.ScheduledTasks.SyncYouTubeStrmTask.PrioritizeChannels(channels, "Delta, UC2", 2);
+        capped.Should().HaveCount(2);
+        capped.Select(c => c.ChannelId).Should().Equal("UC2", "UC4");
+
+        var unlimited = Jellyfin.Plugin.YouTube.ScheduledTasks.SyncYouTubeStrmTask.PrioritizeChannels(channels, "UC4", 0);
+        unlimited.Should().HaveCount(4);
+        unlimited[0].ChannelId.Should().Be("UC4");
+    }
 }

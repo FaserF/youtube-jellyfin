@@ -141,7 +141,8 @@ public partial class YouTubeApiClient
         int maxResults = 50,
         CancellationToken cancellationToken = default)
     {
-        var cacheKey = $"subs_{PluginConfiguration.NormalizeId(usernameOrId)}";
+        var effectiveMax = maxResults <= 0 ? 1000 : maxResults;
+        var cacheKey = $"subs_{PluginConfiguration.NormalizeId(usernameOrId)}_{effectiveMax}";
         if (_cache.TryGetValue(cacheKey, out var cached) &&
             (DateTime.UtcNow - cached.CachedAt).TotalMinutes < 10 &&
             cached.Data is List<YouTubeChannelItem> cachedSubs)
@@ -265,17 +266,28 @@ public partial class YouTubeApiClient
             _logger.LogDebug(ex, "Innertube subscriptions fetch failed for {User}", usernameOrId);
         }
 
-        // 2. Fallback to Google Data API v3 if Innertube returned nothing
+        // 2. Fallback to Google Data API v3 with nextPageToken pagination if Innertube returned nothing
         if (list.Count == 0)
         {
             try
             {
-                var url = $"https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults={Math.Min(50, maxResults)}&order=alphabetical";
-                using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-                if (resp.IsSuccessStatusCode)
+                string? nextPageToken = null;
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (var page = 0; page < 20 && list.Count < effectiveMax; page++)
                 {
+                    var pageSize = Math.Min(50, effectiveMax - list.Count);
+                    var pageParam = !string.IsNullOrWhiteSpace(nextPageToken)
+                        ? $"&pageToken={Uri.EscapeDataString(nextPageToken)}"
+                        : string.Empty;
+                    var url = $"https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults={pageSize}&order=alphabetical{pageParam}";
+                    using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        break;
+                    }
+
                     var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
@@ -290,7 +302,7 @@ public partial class YouTubeApiClient
                             var chanId = snippet.TryGetProperty("resourceId", out var resId) && resId.TryGetProperty("channelId", out var cid)
                                 ? cid.GetString() ?? string.Empty
                                 : string.Empty;
-                            if (string.IsNullOrWhiteSpace(chanId))
+                            if (string.IsNullOrWhiteSpace(chanId) || !seen.Add(chanId))
                             {
                                 continue;
                             }
@@ -306,7 +318,17 @@ public partial class YouTubeApiClient
                                 Description = desc,
                                 ThumbnailUrl = thumb
                             });
+                            if (list.Count >= effectiveMax)
+                            {
+                                break;
+                            }
                         }
+                    }
+
+                    nextPageToken = doc.RootElement.TryGetProperty("nextPageToken", out var npt) ? npt.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(nextPageToken))
+                    {
+                        break;
                     }
                 }
             }
