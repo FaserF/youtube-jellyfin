@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -23,6 +24,9 @@ public static class ProxySecurityHelper
     ];
 
     private static readonly byte[] SigningKey = RandomNumberGenerator.GetBytes(32);
+
+    private static readonly ConcurrentDictionary<string, (IPAddress[] Addresses, DateTime CachedAt)> DnsCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly SocketsHttpHandler DirectHandler = new()
     {
@@ -198,10 +202,15 @@ public static class ProxySecurityHelper
     }
 
     /// <summary>
-    /// Resolves DNS for a host and ensures all returned IP addresses are public/non-blocked.
+    /// Resolves DNS for a host and ensures all returned IP addresses are public/non-blocked (cached 60s).
     /// </summary>
     public static async Task<IPAddress[]> ResolveAndValidateHostAsync(string host, CancellationToken cancellationToken)
     {
+        if (DnsCache.TryGetValue(host, out var cached) && (DateTime.UtcNow - cached.CachedAt).TotalSeconds < 60)
+        {
+            return cached.Addresses;
+        }
+
         var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
         if (addresses.Length == 0)
         {
@@ -216,6 +225,7 @@ public static class ProxySecurityHelper
             }
         }
 
+        DnsCache[host] = (addresses, DateTime.UtcNow);
         return addresses;
     }
 

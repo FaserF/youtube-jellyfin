@@ -53,6 +53,17 @@ public partial class YouTubeApiClient
             return cached.Info;
         }
 
+        // Fast path (~200ms): try Innertube player API before spawning yt-dlp subprocess
+        if (string.IsNullOrWhiteSpace(config.ProxyUrl) && string.IsNullOrWhiteSpace(config.CookiesText))
+        {
+            var fastInfo = await TryResolveViaInnertubeAsync(videoId, config, CancellationToken.None).ConfigureAwait(false);
+            if (fastInfo != null && (!string.IsNullOrWhiteSpace(fastInfo.HlsManifestUrl) || !string.IsNullOrWhiteSpace(fastInfo.DirectStreamUrl)))
+            {
+                _streamCache[videoId] = (fastInfo, DateTime.UtcNow);
+                return fastInfo;
+            }
+        }
+
         var ytDlpBin = ResolveYtDlpBinary(config);
 
         try

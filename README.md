@@ -2,7 +2,7 @@
 
 # 📺 Jellyfin YouTube & YouTube Music Plugin (`Jellyfin.Plugin.YouTube`)
 
-**A 1:1 SmartTube Android TV & YouTube Music Replacement Built Natively into Jellyfin 10.11+**
+**YouTube & YouTube Music Integration for Jellyfin 10.11+**
 
 [![.NET 10.0](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Jellyfin 10.11+](https://img.shields.io/badge/Jellyfin-10.11%2B-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org/)
@@ -12,7 +12,7 @@
 [![ReturnYouTubeDislike](https://img.shields.io/badge/ReturnYouTubeDislike-Integrated-3EA6FF)](https://returnyoutubedislike.com/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-*Transform Jellyfin into a full-featured, ad-free **SmartTube** and **YouTube Music** media center across Android TV, Fire TV, Apple TV, Web, iOS, and Desktop — complete with per-user OAuth 2.0 TV Device Code login, native Jellyfin TV & Music libraries (`Shows`, `Suggestions`, `Upcoming`, `Playlists`, `Collections`, `Albums`, `Artists`), server-side SponsorBlock auto-skip, ReturnYouTubeDislike ratings, and zero-storage `.strm` HLS/M4A proxy streaming.*
+*Integrates YouTube and YouTube Music into Jellyfin across Web, Android TV, Apple TV, and mobile clients — with per-user OAuth 2.0 TV Device Code login, `.strm` libraries, DeArrow titles/thumbnails, Shorts filtering, SponsorBlock skip segments, ReturnYouTubeDislike ratings, and Innertube + `yt-dlp` stream resolution.*
 
 </div>
 

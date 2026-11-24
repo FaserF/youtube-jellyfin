@@ -102,8 +102,18 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
             var hasCached = YouTubeApiClient.TryGetCachedStream(videoId, out var streamInfo);
             if (!hasCached)
             {
-                // Non-blocking speculative prefetch so yt-dlp runs concurrently without freezing Jellyfin UI
-                client.PrefetchStreamInBackground(videoId);
+                // Try fast Innertube resolution (~200ms) with a 1.5s budget so first PlaybackInfo gets exact formats
+                try
+                {
+                    using var fastCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    fastCts.CancelAfter(TimeSpan.FromMilliseconds(1500));
+                    streamInfo = await client.ResolveStreamAsync(videoId, fastCts.Token).ConfigureAwait(false);
+                    hasCached = streamInfo != null;
+                }
+                catch (OperationCanceledException)
+                {
+                    client.PrefetchStreamInBackground(videoId);
+                }
             }
 
             if (isAudioItem)

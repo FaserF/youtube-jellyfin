@@ -320,6 +320,12 @@ public class YouTubePluginController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(info.DirectStreamUrl))
         {
+            if (string.IsNullOrWhiteSpace(Config.ProxyUrl) &&
+                info.DirectStreamUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return Redirect(info.DirectStreamUrl);
+            }
+
             return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
         }
 
@@ -385,6 +391,13 @@ public class YouTubePluginController : ControllerBase
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(Config.ProxyUrl) &&
+            audioUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            Response.Redirect(audioUrl, permanent: false);
+            return;
+        }
+
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, audioUrl);
@@ -420,7 +433,7 @@ public class YouTubePluginController : ControllerBase
             if (!HttpMethods.IsHead(Request.Method))
             {
                 await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
+                await stream.CopyToAsync(Response.Body, 262144, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -603,7 +616,7 @@ public class YouTubePluginController : ControllerBase
             if (!HttpMethods.IsHead(Request.Method))
             {
                 await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                await stream.CopyToAsync(Response.Body, 65536, cancellationToken).ConfigureAwait(false);
+                await stream.CopyToAsync(Response.Body, 262144, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

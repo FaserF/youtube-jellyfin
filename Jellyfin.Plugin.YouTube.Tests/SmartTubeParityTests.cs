@@ -71,4 +71,60 @@ public class SmartTubeParityTests
         peak.EndSeconds.Should().Be(135.0);
         peak.Intensity.Should().Be(0.96);
     }
+
+    [Fact]
+    public async Task TryResolveViaInnertubeAsync_ShouldParseHlsFormatsAndCaptions()
+    {
+        const string playerJson = """
+        {
+          "playabilityStatus": { "status": "OK" },
+          "videoDetails": {
+            "videoId": "dQw4w9WgXcQ",
+            "title": "Test Video",
+            "author": "Test Channel",
+            "channelId": "UCtest",
+            "lengthSeconds": "212",
+            "shortDescription": "Test desc"
+          },
+          "streamingData": {
+            "hlsManifestUrl": "https://manifest.googlevideo.com/api/manifest/hls_variant/test.m3u8",
+            "formats": [
+              { "url": "https://rr1.googlevideo.com/videoplayback?itag=18", "height": 360, "width": 640, "bitrate": 500000 }
+            ],
+            "adaptiveFormats": [
+              { "url": "https://rr1.googlevideo.com/videoplayback?itag=140", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000 }
+            ]
+          },
+          "captions": {
+            "playerCaptionsTracklistRenderer": {
+              "captionTracks": [
+                { "languageCode": "en", "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var handler = new StubHandler(playerJson);
+        using var http = new HttpClient(handler);
+        using var client = new YouTubeApiClient(http, new Moq.Mock<Microsoft.Extensions.Logging.ILogger<YouTubeApiClient>>().Object);
+
+        var info = await client.TryResolveViaInnertubeAsync("dQw4w9WgXcQ", new PluginConfiguration(), TestContext.Current.CancellationToken);
+        info.Should().NotBeNull();
+        info!.HlsManifestUrl.Should().Contain("manifest.googlevideo.com");
+        info.DirectStreamUrl.Should().Contain("googlevideo.com");
+        info.AudioStreamUrl.Should().Contain("itag=140");
+        info.Title.Should().Be("Test Video");
+        info.DurationSeconds.Should().Be(212);
+        info.Subtitles.Should().ContainKey("en");
+    }
+
+    private sealed class StubHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
+    }
 }
