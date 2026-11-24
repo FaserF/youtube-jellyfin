@@ -104,9 +104,15 @@ public class YouTubePluginController : ControllerBase
 
         using var client = CreateClient();
         var (success, error, account) = await client.PollDeviceTokenAsync(deviceCode, targetUser, targetUserId, cancellationToken).ConfigureAwait(false);
-        return !success
-            ? Ok(new { pending = true, error })
-            : Ok(new { pending = false, success = true, jellyfinUser = account?.JellyfinUser, accountName = account?.AccountName });
+        if (!success)
+        {
+            var isPending = string.IsNullOrWhiteSpace(error) ||
+                            error.StartsWith("authorization_pending", StringComparison.OrdinalIgnoreCase) ||
+                            error.StartsWith("slow_down", StringComparison.OrdinalIgnoreCase);
+            return Ok(new { pending = isPending, success = false, error });
+        }
+
+        return Ok(new { pending = false, success = true, jellyfinUser = account?.JellyfinUser, accountName = account?.AccountName });
     }
 
     [HttpGet("users")]

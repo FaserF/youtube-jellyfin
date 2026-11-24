@@ -604,6 +604,11 @@
                                     document.getElementById("tvCodeStatusText").style.color = "#4cd964";
                                     document.getElementById("tvCodeStatusText").textContent = "✅ Linked YouTube account '" + pd.accountName + "' to Jellyfin user '" + pd.jellyfinUser + "'!";
                                     loadUsersList();
+                                } else if (pd.pending === false) {
+                                    clearInterval(pollTimer);
+                                    pollTimer = null;
+                                    document.getElementById("tvCodeStatusText").style.color = "#ff4d4d";
+                                    document.getElementById("tvCodeStatusText").textContent = "❌ Authorization failed: " + (pd.error || "Unknown error");
                                 }
                             } catch (e) { }
                         }, (data.interval || 5) * 1000);

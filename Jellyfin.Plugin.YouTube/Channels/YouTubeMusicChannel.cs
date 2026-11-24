@@ -3,6 +3,7 @@ using Jellyfin.Plugin.YouTube.Configuration;
 using Jellyfin.Plugin.YouTube.Models;
 using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
 using MediaBrowser.Model.Drawing;
@@ -23,15 +24,18 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<YouTubeMusicChannel> _logger;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IUserManager? _userManager;
 
     public YouTubeMusicChannel(
         IHttpClientFactory httpClientFactory,
         ILogger<YouTubeMusicChannel> logger,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IUserManager? userManager = null)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _loggerFactory = loggerFactory;
+        _userManager = userManager;
     }
 
     public string Name => "YouTube Music";
@@ -65,6 +69,18 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         };
     }
 
+    private YouTubeUserAccountEntry? ResolveAccountForUser(PluginConfiguration config, string? rawUserId)
+    {
+        var account = config.GetAccountForUser(rawUserId);
+        if (account != null || _userManager == null || !Guid.TryParse(rawUserId, out var userGuid))
+        {
+            return account;
+        }
+
+        var username = _userManager.GetUserById(userGuid)?.Username;
+        return !string.IsNullOrWhiteSpace(username) ? config.GetAccountForUser(username) : null;
+    }
+
     public bool IsEnabledFor(string userId)
     {
         var config = Config;
@@ -78,12 +94,12 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
             return true;
         }
 
-        return config.GetAccountForUser(userId) != null;
+        return ResolveAccountForUser(config, userId) != null;
     }
 
     public string GetCacheKey(string? userId)
     {
-        var hasAuth = Config.GetAccountForUser(userId) != null;
+        var hasAuth = ResolveAccountForUser(Config, userId) != null;
         return $"ytm_{DataVersion}_{PluginConfiguration.NormalizeId(userId)}_{hasAuth}_{DateTime.UtcNow:yyyyMMddHHmm}";
     }
 
@@ -97,7 +113,7 @@ public class YouTubeMusicChannel : IChannel, IRequiresMediaInfoCallback, IHasCac
         }
 
         var rawUserId = query.UserId.Equals(Guid.Empty) ? null : query.UserId.ToString("N");
-        var account = config.GetAccountForUser(rawUserId);
+        var account = ResolveAccountForUser(config, rawUserId);
         var isAuthenticated = account != null && !string.IsNullOrWhiteSpace(account.RefreshToken);
         var effectiveUserKey = isAuthenticated ? (account!.JellyfinUser ?? rawUserId) : null;
         var limit = config.YouTubeMusicMaxItemsPerFeed > 0 ? config.YouTubeMusicMaxItemsPerFeed : 25;

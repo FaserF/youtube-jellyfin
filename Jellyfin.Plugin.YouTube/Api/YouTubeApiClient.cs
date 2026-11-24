@@ -163,7 +163,10 @@ public partial class YouTubeApiClient : IDisposable
 
         if (root.TryGetProperty("error", out var errProp))
         {
-            return (false, errProp.GetString(), null);
+            var errCode = errProp.GetString() ?? "unknown_error";
+            var errDesc = root.TryGetProperty("error_description", out var descProp) ? descProp.GetString() : null;
+            var message = !string.IsNullOrWhiteSpace(errDesc) ? $"{errCode}: {errDesc}" : errCode;
+            return (false, message, null);
         }
 
         if (!root.TryGetProperty("access_token", out var atProp) ||

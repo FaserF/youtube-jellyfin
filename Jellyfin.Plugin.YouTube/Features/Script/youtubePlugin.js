@@ -135,8 +135,14 @@
                         var pd = await pr.json();
                         if (pd.success) {
                             clearInterval(pollTimer);
+                            pollTimer = null;
                             document.getElementById("ytDevicePollStatus").style.color = "#4cd964";
                             document.getElementById("ytDevicePollStatus").textContent = "✅ Linked to " + pd.accountName + "!";
+                        } else if (pd.pending === false) {
+                            clearInterval(pollTimer);
+                            pollTimer = null;
+                            document.getElementById("ytDevicePollStatus").style.color = "#ff4d4d";
+                            document.getElementById("ytDevicePollStatus").textContent = "❌ Authorization failed: " + (pd.error || "Unknown error");
                         }
                     } catch (e) {}
                 }, (data.interval || 5) * 1000);
