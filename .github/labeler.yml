@@ -1,23 +1,21 @@
-backend:
-  - changed-files:
-    - any-glob-to-any-file:
-      - 'Jellyfin.Plugin.YouTube/**/*.cs'
-      - 'Jellyfin.Plugin.YouTube.csproj'
+# Pull Request Labeler configuration
+enhancement:
+  - head-branch: ['^feat/', '^feature/']
 
-frontend:
-  - changed-files:
-    - any-glob-to-any-file: 'Jellyfin.Plugin.YouTube/Features/Script/**/*.js'
+bug:
+  - head-branch: ['^fix/', '^bugfix/']
 
-tests:
-  - changed-files:
-    - any-glob-to-any-file: 'Jellyfin.Plugin.YouTube.Tests/**/*'
-
-ci-cd:
-  - changed-files:
-    - any-glob-to-any-file: '.github/**/*'
+dependencies:
+  - head-branch: ['^renovate/', '^deps/']
 
 documentation:
   - changed-files:
-    - any-glob-to-any-file:
-      - '*.md'
-      - 'docs/**/*'
+    - any-glob-to-any-file: ['**/*.md', 'docs/**']
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**', 'scripts/**']
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file: ['tests/**', '**/*test*']
