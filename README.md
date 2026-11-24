@@ -78,7 +78,7 @@ Standard YouTube plugins for Jellyfin typically rely on downloading gigabytes of
 - **Native YouTube Features in Jellyfin 12.x:** Includes **DeArrow** anti-clickbait titles & neutral thumbnails, **YouTube Shorts** & **Channel Blocklist** filtering, **SponsorBlock** skip segments (`MediaSegments`) + `poi_highlight` & **"Most Replayed" heatmap** timeline chapters, and native **Creator `PersonInfo` / Studios / Genres / Tags / RYD Rating** mapping across all Jellyfin clients.
 - **100% Native Jellyfin UI Utilization:** Every tab inside Jellyfin's **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries is meaningfully populated — including **Shows**, **Suggestions**, **Upcoming**, **Playlists**, **Collections**, **Artists**, **Albums**, and **Songs**.
 - **True Multi-User Isolation with Seamless Fallback:**
-  - The configured primary Jellyfin user (default: `fabian`) is automatically linked to the primary Google/YouTube OAuth 2.0 account via an embedded/persisted seed token (`fabian_oauth_seed.json`).
+  - Any configured primary Jellyfin user (`PrimaryJellyfinUser`) can be linked automatically via an optional `/config/data/plugins/YouTube/oauth_seed.json` file or environment variables (`JELLYFIN_YOUTUBE_CLIENT_ID`, `JELLYFIN_YOUTUBE_CLIENT_SECRET`, `JELLYFIN_YOUTUBE_REFRESH_TOKEN`).
   - Every other Jellyfin user can either **link their own personal YouTube / YouTube Music account** directly inside the Jellyfin Web UI (`google.com/device` QR/code flow) or **browse and stream immediately via the Public/Anonymous fallback** (or be restricted completely if `EnablePublicFallbackForUnlinkedUsers = false`).
 - **Universal Client Compatibility:** Works out of the box on **Jellyfin for Android TV**, **Findroid**, **Swiftfin**, **Infuse**, **Kodi**, and **Jellyfin Web** without requiring client-side patches.
 
@@ -191,23 +191,22 @@ The plugin implements a flexible, privacy-first multi-user authentication archit
 flowchart LR
     REQ["Jellyfin User Request\n(userId / username)"] --> CHECK_LINK{"Has Personal\nLinked Account in\nUserAccounts?"}
     CHECK_LINK -- "Yes (IsLinked = true)" --> USE_PERSONAL["Use User's Own\nYouTube OAuth Token"]
-    CHECK_LINK -- "No" --> CHECK_PRIMARY{"Matches PrimaryJellyfinUser\n('fabian') or PrimaryJellyfinUserId?"}
-    CHECK_PRIMARY -- "Yes" --> USE_PRIMARY["Auto-Map & Seed\nfabian_oauth_seed.json Token"]
+    CHECK_LINK -- "No" --> CHECK_PRIMARY{"Matches configured\nPrimaryJellyfinUser or PrimaryJellyfinUserId?"}
+    CHECK_PRIMARY -- "Yes" --> USE_PRIMARY["Use Primary User\nOAuth Token (oauth_seed.json / Env)"]
     CHECK_PRIMARY -- "No" --> CHECK_FALLBACK{"EnablePublicFallback\nForUnlinkedUsers?"}
     CHECK_FALLBACK -- "true (Default)" --> USE_PUBLIC["Public / Anonymous Mode\n(Regional Feeds + Prompt to Self-Link)"]
     CHECK_FALLBACK -- "false (Exclusive Mode)" --> DENY["Access Denied / Empty Feed\n(Strictly Exclusive to Linked Users)"]
 ```
 
-- **Primary User Auto-Mapping (`fabian`):**
-  - On startup, `YouTubeStartupService` resolves the Jellyfin user matching `PrimaryJellyfinUser` (default: `"fabian"`) or `PrimaryJellyfinUserId` (default: `"c24de2a9fe3644569746e53b80490646"`).
-  - If no token is stored in `YouTube.xml` yet, it loads the persisted token from `/config/data/youtube-plugin/fabian_oauth_seed.json` (or the embedded resource `Jellyfin.Plugin.YouTube.Configuration.fabian_oauth_seed.json`) and binds it exclusively to `fabian`.
-  - Whenever tokens are refreshed, `fabian_oauth_seed.json` is updated on disk so credentials survive plugin rebuilds or configuration resets.
+- **Primary User Auto-Mapping:**
+  - On startup, `YouTubeStartupService` checks `PrimaryJellyfinUser` (default: empty) and `PrimaryJellyfinUserId` (default: empty).
+  - If an optional `/config/data/plugins/YouTube/oauth_seed.json` file or `JELLYFIN_YOUTUBE_*` environment variables are present, it binds the token to the configured primary user without overwriting other users' linked accounts.
 - **Self-Service Per-User Linking (Any Jellyfin User):**
   - Every Jellyfin user can open the **YouTube Hub Overlay** in Jellyfin Web (or the Admin Dashboard) and click **Connect My YouTube Account**.
   - The plugin initiates a Google OAuth 2.0 TV Device Code session (`https://www.google.com/device`), displays the 8-character `user_code`, and polls in the background until the user authorizes their Google account.
   - Each user's `AccessToken` and `RefreshToken` are stored separately in `PluginConfiguration.UserAccounts` keyed by `JellyfinUserId`.
 - **Configurable Unlinked User Behavior (`EnablePublicFallbackForUnlinkedUsers`):**
-  - **`true` (Default):** Unlinked Jellyfin users can still browse and play public YouTube & YouTube Music feeds (Trending, Music Charts, Search) anonymously without affecting `fabian`'s watch history or recommendations, and can link their own account at any time.
+  - **`true` (Default):** Unlinked Jellyfin users can still browse and play public YouTube & YouTube Music feeds (Trending, Music Charts, Search) anonymously without affecting any linked user's watch history or recommendations, and can link their own account at any time.
   - **`false` (Strict Exclusive Mode):** Unlinked Jellyfin users receive an empty channel/library notice and cannot access YouTube or YouTube Music until they link their own account.
 
 ---
@@ -283,9 +282,9 @@ All settings can be configured in the Jellyfin Dashboard under **Dashboard → P
 | Option Property | Type | Default Value | Detailed Description |
 | :--- | :---: | :---: | :--- |
 | **`EnableStreamingChannel`** | `bool` | `true` | Enables the native **YouTube** Channel in Jellyfin's *Channels* section (`YouTubeChannel`). |
-| **`PrimaryJellyfinUser`** | `string` | `"fabian"` | Username of the primary Jellyfin user (case-insensitive). This user automatically receives the seeded/persisted primary YouTube OAuth account (`fabian_oauth_seed.json`) and serves as the account source for background `.strm` library synchronization. |
-| **`PrimaryJellyfinUserId`** | `string` | `"c24de2a9fe3644569746e53b80490646"` | Optional explicit Jellyfin User GUID for the primary user. Automatically updated by `YouTubeStartupService` when resolving `PrimaryJellyfinUser`. |
-| **`EnablePublicFallbackForUnlinkedUsers`** | `bool` | `true` | Controls access for Jellyfin users who have **not** linked their own YouTube account and are not the `PrimaryJellyfinUser` (`fabian`):<br>• **`true` (Default):** Unlinked users receive Public/Anonymous YouTube & YouTube Music feeds (regional Trending, Music Charts, Search) and can self-link their own Google account via TV Device Code in the UI.<br>• **`false` (Exclusive Mode):** Unlinked users are blocked from browsing YouTube/YouTube Music until they link a personal Google account. |
+| **`PrimaryJellyfinUser`** | `string` | `""` | Optional username of the primary Jellyfin user (case-insensitive) used for background `.strm` library synchronization and optional `oauth_seed.json` / env-var token binding. |
+| **`PrimaryJellyfinUserId`** | `string` | `""` | Optional explicit Jellyfin User GUID for the primary user. |
+| **`EnablePublicFallbackForUnlinkedUsers`** | `bool` | `true` | Controls access for Jellyfin users who have **not** linked their own YouTube account:<br>• **`true` (Default):** Unlinked users receive Public/Anonymous YouTube & YouTube Music feeds (regional Trending, Music Charts, Search) and can self-link their own Google account via TV Device Code in the UI.<br>• **`false` (Exclusive Mode):** Unlinked users are blocked from browsing YouTube/YouTube Music until they link a personal Google account. |
 | **`PreferredLanguage`** | `string` | `"de-DE"` | BCP-47 language tag (`de-DE`, `en-US`, `fr-FR`, `ja-JP`, etc.) passed as `hl` to YouTube Innertube & Data API v3 requests and used to prioritize subtitle tracks. |
 | **`PreferredRegion`** | `string` | `"DE"` | ISO 3166-1 alpha-2 country code (`DE`, `US`, `GB`, `AT`, `CH`, `JP`, etc.) passed as `gl` / `regionCode` for Trending videos (`06 - Trends`) and YouTube Music charts. |
 | **`OAuthClientId`** | `string` | *(YouTube TV Client ID)* | Google OAuth 2.0 Client ID supporting the TV and Limited-Input Device Flow (`urn:ietf:params:oauth:grant-type:device_code`). Pre-configured with YouTube's official TVHTML5 client ID out of the box. |
@@ -378,7 +377,7 @@ Each entry in `PluginConfiguration.UserAccounts` has the following schema:
 | Field | Type | Description |
 | :--- | :---: | :--- |
 | **`JellyfinUserId`** | `string` | Normalized 32-character hex GUID of the Jellyfin user (`N` format). |
-| **`JellyfinUsername`** | `string` | Display username of the Jellyfin user (e.g., `fabian`). |
+| **`JellyfinUsername`** | `string` | Display username of the Jellyfin user (e.g., `alice`). |
 | **`AccessToken`** | `string` | Active Google OAuth 2.0 Bearer token (`ya29...`). |
 | **`RefreshToken`** | `string` | Long-lived Google OAuth 2.0 refresh token (`1//0...`) used for automatic background rotation. |
 | **`TokenExpiryUnix`** | `long` | Unix timestamp (seconds) when `AccessToken` expires (auto-refreshed 60s before expiry). |
@@ -393,7 +392,7 @@ Each entry in `PluginConfiguration.UserAccounts` has the following schema:
 
 | Component Class | Interface / Base Type | Role & Responsibility |
 | :--- | :--- | :--- |
-| **`YouTubeStartupService`** | `IHostedService` | Runs at Jellyfin startup: ensures `/usr/local/bin/yt-dlp` is installed, auto-creates the **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries, seeds `fabian`'s OAuth token from `fabian_oauth_seed.json`, injects `youtubePlugin.js` into `index.html`, and triggers an initial background `.strm` & Playlist sync if the libraries are empty. |
+| **`YouTubeStartupService`** | `IHostedService` | Runs at Jellyfin startup: detects `yt-dlp`, auto-creates the **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries, optionally imports `oauth_seed.json` / `JELLYFIN_YOUTUBE_*` env vars, injects `youtubePlugin.js` into `index.html`, and triggers an initial background `.strm` & Playlist sync if the libraries are empty. |
 | **`YouTubeChannel`** | `IChannel`, `ISearchableChannel` | Provides the live **YouTube** channel with 8 top-level categories (Home, Subscriptions, Watch History, Watch Later, Liked Videos, Trending, Subscribed Channels, and YouTube Music) plus live YouTube search. |
 | **`YouTubeMusicChannel`** | `IChannel`, `ISearchableChannel` | Provides the dedicated **YouTube Music** channel returning `ChannelMediaType.Audio` items (`Supermix & Music Home`, `Liked Songs`, `Recently Played Music`, `Trending & Charts`, `Subscribed Artists`). |
 | **`YouTubeMediaSourceProvider`** | `IMediaSourceProvider` | Intercepts playback for any item with a `ytvideo` or `ytmusic` ProviderId or `.strm` path containing `/api/youtubePlugin/stream/{videoId}/...`. Returns either a direct `m4a`/`aac` audio `MediaSourceInfo` (for music) or an HLS `master.m3u8` video `MediaSourceInfo` with external `.vtt` subtitle streams. |
@@ -526,7 +525,7 @@ cd youtube-jellyfin
 dotnet publish Jellyfin.Plugin.YouTube/Jellyfin.Plugin.YouTube.csproj -c Release -o ./out
 ```
 
-The compiled plugin assembly (`Jellyfin.Plugin.YouTube.dll`, including embedded `configPage.html`, `youtubePlugin.js`, and `fabian_oauth_seed.json`) will be generated in `./out/Jellyfin.Plugin.YouTube.dll`.
+The compiled plugin assembly (`Jellyfin.Plugin.YouTube.dll`, including embedded `configPage.html` and `youtubePlugin.js`) will be generated in `./out/Jellyfin.Plugin.YouTube.dll`.
 
 ### Deploy to Jellyfin (Docker / Komodo)
 
@@ -537,7 +536,7 @@ The compiled plugin assembly (`Jellyfin.Plugin.YouTube.dll`, including embedded 
 2. Restart the Jellyfin container via **Komodo Core API / Web UI** (`DeployStack` / `RestartContainer`).
 3. On startup, `YouTubeStartupService` will automatically:
    - Provision the **YouTube** (`tvshows`) and **YouTube Music** (`music`) libraries.
-   - Link `fabian` to the primary YouTube OAuth seed.
+   - Apply any configured primary user token (`oauth_seed.json` or `JELLYFIN_YOUTUBE_*` env vars).
    - Run the initial `.strm`, Playlist, and Collection synchronization.
 
 ---
@@ -546,10 +545,10 @@ The compiled plugin assembly (`Jellyfin.Plugin.YouTube.dll`, including embedded 
 
 | Symptom | Cause | Solution |
 | :--- | :--- | :--- |
-| **Video hangs on loading or `ffmpeg` exits with `Invalid data found`** | Old `.strm` files or third-party `.strm` providers (e.g., Crunchyroll) intercepting YouTube `.strm` paths, or HLS `SUBTITLES` tags breaking `ffmpeg`. | Handled automatically in v1.1+: `YouTubePluginController` strips `#EXT-X-MEDIA:TYPE=SUBTITLES` from `master.m3u8` and delivers captions externally via `/subtitles/{lang}.vtt`. |
+| **Video hangs on loading or `ffmpeg` exits with `Invalid data found`** | Old `.strm` files or third-party `.strm` providers intercepting YouTube `.strm` paths, or HLS `SUBTITLES` tags breaking `ffmpeg`. | Handled automatically in v1.1+: `YouTubePluginController` strips `#EXT-X-MEDIA:TYPE=SUBTITLES` from `master.m3u8` and delivers captions externally via `/subtitles/{lang}.vtt`. |
 | **`Shows`, `Suggestions`, or `Upcoming` tab is empty after adding the plugin** | Initial `.strm` sync or Jellyfin library scan has not completed yet, or `Season 1` folders lacked `Season` provider metadata. | Trigger **Dashboard → Scheduled Tasks → Sync YouTube & YouTube Music Library** and wait ~60 seconds for the scan to index `Season 1` and assign `PresentationUniqueKey`. |
-| **YouTube returns `Sign in to confirm you're not a bot` on datacenter IPs** | Oracle Cloud / datacenter IP range rate-limited by YouTube. | Configure `ProxyUrl` (e.g., `socks5://easyproxy-sports:1080`) and ensure the user is linked via OAuth 2.0 TV Device Code. |
-| **Another Jellyfin user sees `fabian`'s recommendations** | Global token fallback was active instead of per-user isolation. | Fixed in `YouTubeAuthManager`: `fabian`'s token is strictly bound to `PrimaryJellyfinUser` (`fabian`). Other users automatically get Public/Anonymous feeds until they link their own account. |
+| **YouTube returns `Sign in to confirm you're not a bot` on datacenter IPs** | Datacenter IP range rate-limited by YouTube. | Configure `ProxyUrl` (e.g., `socks5://proxy:1080`) and ensure the user is linked via OAuth 2.0 TV Device Code. |
+| **Another Jellyfin user sees the primary user's recommendations** | Global token fallback was active instead of per-user isolation. | Each user's OAuth token is strictly bound to their `JellyfinUserId` in `UserAccounts`. Unlinked users automatically get Public/Anonymous feeds until they link their own account. |
 
 ---
 

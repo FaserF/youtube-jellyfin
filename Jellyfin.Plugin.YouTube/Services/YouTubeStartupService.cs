@@ -106,7 +106,7 @@ public class YouTubeStartupService : IHostedService
 
             var seedFile = File.Exists("/config/data/plugins/YouTube/oauth_seed.json")
                 ? "/config/data/plugins/YouTube/oauth_seed.json"
-                : (File.Exists("/config/data/plugins/YouTube/fabian_oauth_seed.json") ? "/config/data/plugins/YouTube/fabian_oauth_seed.json" : null);
+                : null;
 
             if (seedFile != null)
             {
