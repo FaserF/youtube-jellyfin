@@ -50,12 +50,12 @@ def main():
 
     changelog = ""
     if args.changelog_file and os.path.exists(args.changelog_file):
-        with open(args.changelog_file, "r", encoding="utf-8") as f:
+        with open(args.changelog_file, encoding="utf-8") as f:
             changelog = f.read().strip()
     if not changelog:
         changelog = f"Release {args.version}"
 
-    with open(args.manifest_path, "r", encoding="utf-8") as f:
+    with open(args.manifest_path, encoding="utf-8") as f:
         manifest = json.load(f)
 
     now_iso = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
