@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using Jellyfin.Plugin.YouTube.Api;
 using Jellyfin.Plugin.YouTube.Configuration;
+using Jellyfin.Plugin.YouTube.Helpers;
 using Jellyfin.Plugin.YouTube.Models;
 using Jellyfin.Plugin.YouTube.Providers;
 using MediaBrowser.Controller.Library;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.YouTube.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/youtubePlugin")]
 public class YouTubePluginController : ControllerBase
 {
@@ -61,7 +63,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpPost("auth/device-code")]
-    [AllowAnonymous]
     public async Task<ActionResult<YouTubeDeviceCodeResponse>> RequestDeviceCode(CancellationToken cancellationToken)
     {
         using var client = CreateClient();
@@ -72,7 +73,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpPost("auth/poll")]
-    [AllowAnonymous]
     public async Task<ActionResult> PollDeviceCode(
         [FromQuery] string deviceCode,
         [FromQuery] string? jellyfinUser = null,
@@ -84,18 +84,39 @@ public class YouTubePluginController : ControllerBase
             return BadRequest(new { error = "Missing deviceCode" });
         }
 
-        var targetUser = !string.IsNullOrWhiteSpace(jellyfinUser) ? jellyfinUser : (Config.PrimaryJellyfinUser ?? string.Empty);
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, jellyfinUser) ||
+            !ControllerAuthHelper.IsOwnerOrAdmin(caller, jellyfinUserId))
+        {
+            return Forbid();
+        }
+
+        var targetUser = caller.IsAdmin
+            ? (!string.IsNullOrWhiteSpace(jellyfinUser) ? jellyfinUser : (!string.IsNullOrWhiteSpace(caller.Username) ? caller.Username : (Config.PrimaryJellyfinUser ?? string.Empty)))
+            : caller.Username;
+        var targetUserId = caller.IsAdmin
+            ? (!string.IsNullOrWhiteSpace(jellyfinUserId) ? jellyfinUserId : (caller.UserId != Guid.Empty ? caller.UserId.ToString("N") : null))
+            : (caller.UserId != Guid.Empty ? caller.UserId.ToString("N") : null);
+
         using var client = CreateClient();
-        var (success, error, account) = await client.PollDeviceTokenAsync(deviceCode, targetUser, jellyfinUserId, cancellationToken).ConfigureAwait(false);
+        var (success, error, account) = await client.PollDeviceTokenAsync(deviceCode, targetUser, targetUserId, cancellationToken).ConfigureAwait(false);
         return !success
             ? Ok(new { pending = true, error })
             : Ok(new { pending = false, success = true, jellyfinUser = account?.JellyfinUser, accountName = account?.AccountName });
     }
 
     [HttpGet("users")]
-    [AllowAnonymous]
     public ActionResult GetUserMappings(CancellationToken cancellationToken)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
         var config = Config;
         var jfUsers = new List<object>();
         try
@@ -105,11 +126,18 @@ public class YouTubePluginController : ControllerBase
             {
                 var uid = user.Id.ToString("N");
                 var uname = user.Username;
-                if (!string.IsNullOrWhiteSpace(uname))
+                if (string.IsNullOrWhiteSpace(uname))
                 {
-                    var linkedAcc = config.GetAccountForUser(uname)?.AccountName ?? config.GetAccountForUser(uid)?.AccountName;
-                    jfUsers.Add(new { id = uid, username = uname, linkedAccount = linkedAcc, isLinked = !string.IsNullOrWhiteSpace(linkedAcc) });
+                    continue;
                 }
+
+                if (!caller.IsAdmin && !ControllerAuthHelper.IsOwnerOrAdmin(caller, uid) && !ControllerAuthHelper.IsOwnerOrAdmin(caller, uname))
+                {
+                    continue;
+                }
+
+                var linkedAcc = config.GetAccountForUser(uname)?.AccountName ?? config.GetAccountForUser(uid)?.AccountName;
+                jfUsers.Add(new { id = uid, username = uname, linkedAccount = linkedAcc, isLinked = !string.IsNullOrWhiteSpace(linkedAcc) });
             }
         }
         catch (Exception ex)
@@ -117,25 +145,40 @@ public class YouTubePluginController : ControllerBase
             _logger.LogWarning(ex, "Could not query users via IUserManager");
         }
 
-        return Ok(new
-        {
-            enablePublicFallback = config.EnablePublicFallbackForUnlinkedUsers,
-            primaryUser = config.PrimaryJellyfinUser,
-            users = jfUsers,
-            accounts = (config.UserAccounts ?? new List<YouTubeUserAccountEntry>()).Select(a => new
+        var visibleAccounts = (config.UserAccounts ?? new List<YouTubeUserAccountEntry>())
+            .Where(a => caller.IsAdmin ||
+                        ControllerAuthHelper.IsOwnerOrAdmin(caller, a.JellyfinUser) ||
+                        ControllerAuthHelper.IsOwnerOrAdmin(caller, a.JellyfinUserId))
+            .Select(a => new
             {
                 a.JellyfinUser,
                 a.JellyfinUserId,
                 a.AccountName,
                 hasRefreshToken = !string.IsNullOrWhiteSpace(a.RefreshToken)
-            })
+            });
+
+        return Ok(new
+        {
+            enablePublicFallback = config.EnablePublicFallbackForUnlinkedUsers,
+            primaryUser = caller.IsAdmin ? config.PrimaryJellyfinUser : caller.Username,
+            users = jfUsers,
+            accounts = visibleAccounts
         });
     }
 
     [HttpDelete("users/{jellyfinUser}")]
-    [AllowAnonymous]
     public ActionResult UnlinkUserAccount([FromRoute] string jellyfinUser)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, jellyfinUser))
+        {
+            return Forbid();
+        }
+
         var config = Config;
         config.UserAccounts?.RemoveAll(u =>
             string.Equals(PluginConfiguration.NormalizeId(u.JellyfinUser), PluginConfiguration.NormalizeId(jellyfinUser), StringComparison.OrdinalIgnoreCase) ||
@@ -152,7 +195,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpGet("stream/{videoId}/info")]
-    [AllowAnonymous]
     public async Task<ActionResult<YouTubeStreamInfoDto>> GetStreamInfo([FromRoute] string videoId, CancellationToken cancellationToken)
     {
         var cleanId = CleanVideoId(videoId);
@@ -397,6 +439,7 @@ public class YouTubePluginController : ControllerBase
     public async Task<ActionResult> ProxyUrl(
         [FromRoute] string? filename = null,
         [FromQuery] string? u = null,
+        [FromQuery] string? sig = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(u))
@@ -414,22 +457,33 @@ public class YouTubePluginController : ControllerBase
             targetUrl = Uri.UnescapeDataString(u);
         }
 
-        if (!targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (User.Identity?.IsAuthenticated != true && !ProxySecurityHelper.VerifySignature(targetUrl, sig))
         {
-            return BadRequest();
+            return Unauthorized();
+        }
+
+        if (!ProxySecurityHelper.TryValidateTargetUri(targetUrl, out _, out var validationError))
+        {
+            _logger.LogWarning("Rejected proxy request for disallowed target URL {TargetUrl}: {Reason}", targetUrl, validationError);
+            return BadRequest(new { error = validationError });
         }
 
         Response.Headers["Access-Control-Allow-Origin"] = "*";
         Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
         Response.Headers["Access-Control-Allow-Headers"] = "Range, Accept-Encoding";
 
-        using var client = CreateClient();
-
         if (IsM3u8PlaylistUrl(targetUrl))
         {
             try
             {
-                var rawM3u8 = await client.HttpClient.GetStringAsync(targetUrl, cancellationToken).ConfigureAwait(false);
+                using var validated = await ProxySecurityHelper.SendValidatedAsync(
+                    HttpMethod.Get,
+                    targetUrl,
+                    null,
+                    Config.ProxyUrl,
+                    cancellationToken).ConfigureAwait(false);
+                validated.Response.EnsureSuccessStatusCode();
+                var rawM3u8 = await validated.Response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 return Content(RewriteM3u8Urls(rawM3u8, targetUrl), "application/vnd.apple.mpegurl; charset=utf-8");
             }
             catch (Exception ex)
@@ -439,7 +493,8 @@ public class YouTubePluginController : ControllerBase
             }
         }
 
-        // Stream video segment (.ts / .m4s / etc.) or timedtext through the server using proxy-aware HttpClient
+        // Stream video segment (.ts / .m4s / etc.) or timedtext through the server using SSRF-validated HttpClient
+        using var client = CreateClient();
         return await ProxyRemoteUrlInternalAsync(client, targetUrl, cancellationToken).ConfigureAwait(false);
     }
 
@@ -447,19 +502,26 @@ public class YouTubePluginController : ControllerBase
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
-            if (Request.Headers.TryGetValue("Range", out var rangeHeader))
-            {
-                req.Headers.TryAddWithoutValidation("Range", rangeHeader.ToArray());
-            }
-            else if (HttpMethods.IsHead(Request.Method))
-            {
-                req.Headers.TryAddWithoutValidation("Range", "bytes=0-0");
-            }
+            using var validated = await ProxySecurityHelper.SendValidatedAsync(
+                HttpMethod.Get,
+                targetUrl,
+                req =>
+                {
+                    if (Request.Headers.TryGetValue("Range", out var rangeHeader))
+                    {
+                        req.Headers.TryAddWithoutValidation("Range", rangeHeader.ToArray());
+                    }
+                    else if (HttpMethods.IsHead(Request.Method))
+                    {
+                        req.Headers.TryAddWithoutValidation("Range", "bytes=0-0");
+                    }
 
-            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                    req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                },
+                Config.ProxyUrl,
+                cancellationToken).ConfigureAwait(false);
 
-            using var resp = await client.HttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var resp = validated.Response;
             Response.StatusCode = (int)resp.StatusCode;
 
             if (resp.Content.Headers.ContentRange != null)
@@ -608,8 +670,9 @@ public class YouTubePluginController : ControllerBase
                 {
                     var abs = new Uri(baseUri, m.Groups[1].Value).ToString();
                     var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                    var sig = ProxySecurityHelper.ComputeSignature(abs);
                     var ext = GetProxyExtensionForUrl(abs);
-                    return $"URI=\"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}\"";
+                    return $"URI=\"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}&sig={Uri.EscapeDataString(sig)}\"";
                 });
                 sb.AppendLine(uriUpdated);
             }
@@ -617,8 +680,9 @@ public class YouTubePluginController : ControllerBase
             {
                 var abs = new Uri(baseUri, line).ToString();
                 var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(abs));
+                var sig = ProxySecurityHelper.ComputeSignature(abs);
                 var ext = GetProxyExtensionForUrl(abs);
-                sb.AppendLine($"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}");
+                sb.AppendLine($"{serverUrl}/api/youtubePlugin/proxy/{ext}?u={Uri.EscapeDataString(b64)}&sig={Uri.EscapeDataString(sig)}");
             }
         }
 
@@ -626,7 +690,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpGet("sponsorblock/{videoId}")]
-    [AllowAnonymous]
     public async Task<ActionResult<List<SponsorBlockSegmentDto>>> GetSponsorBlock([FromRoute] string videoId, CancellationToken cancellationToken)
     {
         using var client = CreateClient();
@@ -634,7 +697,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpGet("ryd/{videoId}")]
-    [AllowAnonymous]
     public async Task<ActionResult<ReturnYouTubeDislikeDto>> GetDislikes([FromRoute] string videoId, CancellationToken cancellationToken)
     {
         using var client = CreateClient();
@@ -643,17 +705,36 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpGet("comments/{videoId}")]
-    [AllowAnonymous]
     public async Task<ActionResult<List<YouTubeCommentDto>>> GetComments([FromRoute] string videoId, [FromQuery] string? userId = null, CancellationToken cancellationToken = default)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, userId))
+        {
+            return Forbid();
+        }
+
+        var targetUser = !string.IsNullOrWhiteSpace(userId) ? userId : caller.Username;
         using var client = CreateClient();
-        return Ok(await client.GetVideoCommentsAsync(CleanVideoId(videoId), userId, 30, cancellationToken).ConfigureAwait(false));
+        return Ok(await client.GetVideoCommentsAsync(CleanVideoId(videoId), targetUser, 30, cancellationToken).ConfigureAwait(false));
     }
 
     [HttpGet("search")]
-    [AllowAnonymous]
     public async Task<ActionResult> Search([FromQuery] string q, [FromQuery] string? userId = null, [FromQuery] int? limit = null, [FromQuery] bool? includeNonLocal = null, CancellationToken cancellationToken = default)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, userId))
+        {
+            return Forbid();
+        }
+
         if (string.IsNullOrWhiteSpace(q))
         {
             return Ok(new { items = new List<YouTubeVideoItem>(), suppressAi = false });
@@ -669,9 +750,10 @@ public class YouTubePluginController : ControllerBase
             return Ok(new { items = new List<YouTubeVideoItem>(), suppressAi = isYt && Config.YtSearchSuppressAiWhenYtKeyword });
         }
 
+        var targetUser = !string.IsNullOrWhiteSpace(userId) ? userId : caller.Username;
         var maxResults = limit ?? Config.YtSearchMaxResults;
         using var client = CreateClient();
-        var videos = await client.SearchVideosAsync(cleanTerm, userId, maxResults, cancellationToken).ConfigureAwait(false);
+        var videos = await client.SearchVideosAsync(cleanTerm, targetUser, maxResults, cancellationToken).ConfigureAwait(false);
 
         var allowNonLocal = includeNonLocal ?? Config.YtSearchShowNonLocalResults;
         if (!allowNonLocal)
@@ -698,28 +780,50 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpPost("rate/{videoId}")]
-    [AllowAnonymous]
     public async Task<ActionResult> RateVideo([FromRoute] string videoId, [FromQuery] string rating = "like", [FromQuery] string? userId = null, CancellationToken cancellationToken = default)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, userId))
+        {
+            return Forbid();
+        }
+
         using var client = CreateClient();
         var clean = CleanVideoId(videoId);
-        var targetUser = userId ?? Config.PrimaryJellyfinUser;
+        var targetUser = !string.IsNullOrWhiteSpace(userId)
+            ? userId
+            : (!string.IsNullOrWhiteSpace(caller.Username) ? caller.Username : Config.PrimaryJellyfinUser);
         var ok = await client.RateVideoAsync(clean, rating, targetUser, cancellationToken).ConfigureAwait(false);
         return Ok(new { success = ok, videoId = clean, rating });
     }
 
     [HttpPost("subscribe/{channelId}")]
-    [AllowAnonymous]
     public async Task<ActionResult> Subscribe([FromRoute] string channelId, [FromQuery] string? userId = null, CancellationToken cancellationToken = default)
     {
+        if (!ControllerAuthHelper.TryGetCaller(User, _userManager, out var caller) || caller == null)
+        {
+            return Unauthorized();
+        }
+
+        if (!ControllerAuthHelper.IsOwnerOrAdmin(caller, userId))
+        {
+            return Forbid();
+        }
+
         using var client = CreateClient();
-        var targetUser = userId ?? Config.PrimaryJellyfinUser;
+        var targetUser = !string.IsNullOrWhiteSpace(userId)
+            ? userId
+            : (!string.IsNullOrWhiteSpace(caller.Username) ? caller.Username : Config.PrimaryJellyfinUser);
         var ok = await client.SubscribeChannelAsync(channelId, targetUser, cancellationToken).ConfigureAwait(false);
         return Ok(new { success = ok, channelId });
     }
 
     [HttpPost("library/sync")]
-    [AllowAnonymous]
+    [Authorize(Policy = "RequiresElevation")]
     public async Task<ActionResult> SyncLibrary([FromServices] Services.YouTubePlaylistAndCollectionSyncService playlistSyncService, CancellationToken cancellationToken)
     {
         using var client = CreateClient();
@@ -730,7 +834,7 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpPost("trailers/sync")]
-    [AllowAnonymous]
+    [Authorize(Policy = "RequiresElevation")]
     public async Task<ActionResult> SyncTrailers(CancellationToken cancellationToken)
     {
         using var client = CreateClient();
@@ -740,7 +844,6 @@ public class YouTubePluginController : ControllerBase
     }
 
     [HttpGet("trailers/{itemId}")]
-    [AllowAnonymous]
     public async Task<ActionResult> GetItemTrailer([FromRoute] string itemId, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(itemId, out var id) || _libraryManager.GetItemById(id) is not { } item)

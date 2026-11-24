@@ -381,7 +381,6 @@ public partial class YouTubeApiClient
         {
             "--no-warnings",
             "--no-playlist",
-            "--no-check-certificates",
             "--geo-bypass",
             "--geo-bypass-country",
             !string.IsNullOrWhiteSpace(config.PreferredRegion) ? config.PreferredRegion : "DE",

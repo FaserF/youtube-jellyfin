@@ -17,6 +17,28 @@
         headerRight.insertBefore(btn, headerRight.firstChild);
     }
 
+    function authFetch(url, options) {
+        options = options || {};
+        var headers = new Headers(options.headers || {});
+        var token = window.ApiClient && window.ApiClient.accessToken && window.ApiClient.accessToken();
+        if (token) {
+            headers.set("X-Emby-Token", token);
+        }
+        options.headers = headers;
+        return fetch(url, options);
+    }
+
+    function safeHttpUrl(rawUrl) {
+        if (!rawUrl || typeof rawUrl !== "string") return "";
+        try {
+            var parsed = new URL(rawUrl, window.location.origin);
+            if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+                return parsed.href;
+            }
+        } catch (e) {}
+        return "";
+    }
+
     function openYouTubeSearchModal() {
         var existing = document.getElementById("ytSmartTubeModal");
         if (existing) existing.remove();
@@ -68,29 +90,37 @@
             var panel = document.getElementById("ytAccountPanel");
             panel.style.display = panel.style.display === "none" ? "block" : "none";
             try {
-                var r = await fetch("/api/youtubePlugin/users");
+                var r = await authFetch("/api/youtubePlugin/users");
                 var d = await r.json();
                 var me = (d.users || []).find(function (u) {
                     return (u.id && u.id.replace(/-/g, "") === uid.replace(/-/g, "")) || u.username.toLowerCase() === uid.toLowerCase();
                 });
                 var infoEl = document.getElementById("ytAccountInfo");
+                var labelPrefix = document.createTextNode("👤 Jellyfin User: ");
+                var strongUser = document.createElement("strong");
+                strongUser.textContent = me ? me.username : uid;
+                var sep = document.createTextNode(" — ");
+                var statusSpan = document.createElement("span");
                 if (me && me.isLinked) {
-                    infoEl.innerHTML = '👤 Jellyfin User: <strong>' + me.username + '</strong> — <span style="color:#4cd964;">✅ Linked to ' + me.linkedAccount + ' (YouTube &amp; YouTube Music)</span>';
+                    statusSpan.style.color = "#4cd964";
+                    statusSpan.textContent = "✅ Linked to " + (me.linkedAccount || "") + " (YouTube & YouTube Music)";
                 } else {
-                    infoEl.innerHTML = '👤 Jellyfin User: <strong>' + (me ? me.username : uid) + '</strong> — <span style="color:#aaa;">🌐 Public Mode (Not linked yet)</span>';
+                    statusSpan.style.color = "#aaa";
+                    statusSpan.textContent = "🌐 Public Mode (Not linked yet)";
                 }
+                infoEl.replaceChildren(labelPrefix, strongUser, sep, statusSpan);
             } catch (e) {}
         };
 
         document.getElementById("ytStartDeviceAuth").onclick = async function () {
             if (pollTimer) clearInterval(pollTimer);
-            var r = await fetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
+            var r = await authFetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
             var data = await r.json();
             document.getElementById("ytDeviceCodeArea").style.display = "block";
             document.getElementById("ytUserCodeDisplay").textContent = data.user_code || "ERROR";
             document.getElementById("ytDevicePollStatus").textContent = "Waiting for confirmation on google.com/device...";
 
-            var ur = await fetch("/api/youtubePlugin/users");
+            var ur = await authFetch("/api/youtubePlugin/users");
             var ud = await ur.json();
             var me = (ud.users || []).find(function (u) {
                 return (u.id && u.id.replace(/-/g, "") === uid.replace(/-/g, "")) || u.username.toLowerCase() === uid.toLowerCase();
@@ -101,7 +131,7 @@
             if (data.device_code) {
                 pollTimer = setInterval(async function () {
                     try {
-                        var pr = await fetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfName) + "&jellyfinUserId=" + encodeURIComponent(jfId), { method: "POST" });
+                        var pr = await authFetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfName) + "&jellyfinUserId=" + encodeURIComponent(jfId), { method: "POST" });
                         var pd = await pr.json();
                         if (pd.success) {
                             clearInterval(pollTimer);
@@ -119,46 +149,88 @@
             var mode = document.getElementById("ytSearchMode").value;
             var searchQuery = mode === "music" ? q + " Official Audio" : q;
             var resContainer = document.getElementById("ytSearchResults");
-            resContainer.innerHTML = "<div>Searching " + (mode === "music" ? "YouTube Music" : "YouTube") + "...</div>";
+            var searchingEl = document.createElement("div");
+            searchingEl.textContent = "Searching " + (mode === "music" ? "YouTube Music" : "YouTube") + "...";
+            resContainer.replaceChildren(searchingEl);
             try {
-                var r = await fetch("/api/youtubePlugin/search?q=" + encodeURIComponent(searchQuery) + "&userId=" + encodeURIComponent(uid));
+                var r = await authFetch("/api/youtubePlugin/search?q=" + encodeURIComponent(searchQuery) + "&userId=" + encodeURIComponent(uid));
                 var resData = await r.json();
                 var items = Array.isArray(resData) ? resData : (resData.items || []);
-                resContainer.innerHTML = (items || []).map(function (v) {
-                    return '<div style="background:#1c1c1e;border-radius:8px;overflow:hidden;border:1px solid #2c2c2e;display:flex;flex-direction:column;">' +
-                        '<img src="' + v.ThumbnailUrl + '" style="width:100%;aspect-ratio:16/9;object-fit:cover;" />' +
-                        '<div style="padding:10px;flex:1;display:flex;flex-direction:column;justify-content:space-between;">' +
-                        '<div><div style="font-weight:bold;font-size:14px;margin-bottom:4px;">' + v.Title + '</div>' +
-                        '<div style="font-size:12px;color:#aaa;">' + (v.ChannelTitle || "") + '</div></div>' +
-                        '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">' +
-                        '<a href="/api/youtubePlugin/stream/' + v.VideoId + '/play" target="_blank" style="background:#e50914;color:#fff;text-decoration:none;padding:6px 10px;border-radius:4px;font-size:12px;font-weight:bold;">▶ Video</a>' +
-                        '<button data-audio="' + v.VideoId + '" data-title="' + (v.Title || "").replace(/"/g, "") + '" style="background:#9333ea;color:#fff;border:none;padding:6px 10px;border-radius:4px;font-size:12px;font-weight:bold;cursor:pointer;">🎵 Play Music</button>' +
-                        '<button data-like="' + v.VideoId + '" style="background:#2c2c2e;color:#fff;border:none;padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer;">👍 Like</button>' +
-                        '</div></div></div>';
-                }).join("");
+                var cards = (items || []).map(function (v) {
+                    var vid = String(v.VideoId || "");
+                    var titleText = String(v.Title || "");
+                    var channelText = String(v.ChannelTitle || "");
+                    var safeThumb = safeHttpUrl(v.ThumbnailUrl);
 
-                resContainer.querySelectorAll("button[data-audio]").forEach(function (b) {
-                    b.onclick = function () {
-                        var vid = b.getAttribute("data-audio");
-                        var title = b.getAttribute("data-title");
+                    var card = document.createElement("div");
+                    card.style.cssText = "background:#1c1c1e;border-radius:8px;overflow:hidden;border:1px solid #2c2c2e;display:flex;flex-direction:column;";
+
+                    var img = document.createElement("img");
+                    if (safeThumb) {
+                        img.setAttribute("src", safeThumb);
+                    }
+                    img.setAttribute("alt", titleText);
+                    img.style.cssText = "width:100%;aspect-ratio:16/9;object-fit:cover;";
+                    card.appendChild(img);
+
+                    var body = document.createElement("div");
+                    body.style.cssText = "padding:10px;flex:1;display:flex;flex-direction:column;justify-content:space-between;";
+
+                    var metaWrap = document.createElement("div");
+                    var titleDiv = document.createElement("div");
+                    titleDiv.style.cssText = "font-weight:bold;font-size:14px;margin-bottom:4px;";
+                    titleDiv.textContent = titleText;
+                    var channelDiv = document.createElement("div");
+                    channelDiv.style.cssText = "font-size:12px;color:#aaa;";
+                    channelDiv.textContent = channelText;
+                    metaWrap.appendChild(titleDiv);
+                    metaWrap.appendChild(channelDiv);
+                    body.appendChild(metaWrap);
+
+                    var actions = document.createElement("div");
+                    actions.style.cssText = "margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;";
+
+                    var playLink = document.createElement("a");
+                    playLink.setAttribute("href", "/api/youtubePlugin/stream/" + encodeURIComponent(vid) + "/play");
+                    playLink.setAttribute("target", "_blank");
+                    playLink.setAttribute("rel", "noopener noreferrer");
+                    playLink.style.cssText = "background:#e50914;color:#fff;text-decoration:none;padding:6px 10px;border-radius:4px;font-size:12px;font-weight:bold;";
+                    playLink.textContent = "▶ Video";
+                    actions.appendChild(playLink);
+
+                    var audioBtn = document.createElement("button");
+                    audioBtn.type = "button";
+                    audioBtn.style.cssText = "background:#9333ea;color:#fff;border:none;padding:6px 10px;border-radius:4px;font-size:12px;font-weight:bold;cursor:pointer;";
+                    audioBtn.textContent = "🎵 Play Music";
+                    audioBtn.onclick = function () {
                         var bar = document.getElementById("ytAudioPlayerBar");
                         var audioEl = document.getElementById("ytAudioElement");
                         bar.style.display = "flex";
-                        document.getElementById("ytAudioNowPlaying").textContent = "🎵 " + title;
+                        document.getElementById("ytAudioNowPlaying").textContent = "🎵 " + titleText;
                         audioEl.src = "/api/youtubePlugin/stream/" + encodeURIComponent(vid) + "/audio.m4a";
                         audioEl.play();
                     };
-                });
+                    actions.appendChild(audioBtn);
 
-                resContainer.querySelectorAll("button[data-like]").forEach(function (b) {
-                    b.onclick = async function () {
-                        var vid = b.getAttribute("data-like");
-                        await fetch("/api/youtubePlugin/rate/" + encodeURIComponent(vid) + "?rating=like&userId=" + encodeURIComponent(uid), { method: "POST" });
-                        b.textContent = "❤️ Liked";
+                    var likeBtn = document.createElement("button");
+                    likeBtn.type = "button";
+                    likeBtn.style.cssText = "background:#2c2c2e;color:#fff;border:none;padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer;";
+                    likeBtn.textContent = "👍 Like";
+                    likeBtn.onclick = async function () {
+                        await authFetch("/api/youtubePlugin/rate/" + encodeURIComponent(vid) + "?rating=like&userId=" + encodeURIComponent(uid), { method: "POST" });
+                        likeBtn.textContent = "❤️ Liked";
                     };
+                    actions.appendChild(likeBtn);
+
+                    body.appendChild(actions);
+                    card.appendChild(body);
+                    return card;
                 });
+                resContainer.replaceChildren.apply(resContainer, cards);
             } catch (e) {
-                resContainer.innerHTML = "<div>Search error: " + e.message + "</div>";
+                var errEl = document.createElement("div");
+                errEl.textContent = "Search error: " + (e && e.message ? e.message : "Unknown error");
+                resContainer.replaceChildren(errEl);
             }
         }
 

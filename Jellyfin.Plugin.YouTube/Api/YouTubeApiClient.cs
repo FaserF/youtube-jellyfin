@@ -147,7 +147,7 @@ public partial class YouTubeApiClient : IDisposable
         {
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret,
-            ["code"] = deviceCode,
+            ["device_code"] = deviceCode,
             ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
         };
 

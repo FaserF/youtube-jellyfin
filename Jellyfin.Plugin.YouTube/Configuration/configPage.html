@@ -461,13 +461,25 @@
                 var pluginId = "a9f4e2c1-8b7d-4e6a-9c5b-3d2e1f0a8b9c";
                 var pollTimer = null;
 
+                function authFetch(url, options) {
+                    options = options || {};
+                    var headers = new Headers(options.headers || {});
+                    var token = window.ApiClient && window.ApiClient.accessToken && window.ApiClient.accessToken();
+                    if (token) {
+                        headers.set("X-Emby-Token", token);
+                    }
+                    options.headers = headers;
+                    return fetch(url, options);
+                }
+
                 async function loadUsersList() {
                     try {
-                        var res = await fetch("/api/youtubePlugin/users");
+                        var res = await authFetch("/api/youtubePlugin/users");
                         var data = await res.json();
                         var sel = document.getElementById("selectJellyfinUser");
-                        sel.innerHTML = "";
-                        var rows = [];
+                        sel.replaceChildren();
+                        var table = document.getElementById("linkedUsersTable");
+                        var rowEls = [];
                         (data.users || []).forEach(function (u) {
                             var opt = document.createElement("option");
                             opt.value = u.username;
@@ -475,15 +487,31 @@
                             opt.textContent = u.username + (u.isLinked ? " (Linked: " + u.linkedAccount + ")" : " (Unlinked)");
                             sel.appendChild(opt);
 
-                            rows.push(
-                                '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;">' +
-                                '<div><strong>' + u.username + '</strong> — ' +
-                                (u.isLinked ? '<span style="color:#4cd964;">✅ Connected (' + u.linkedAccount + ')</span>' : '<span style="color:#999;">🌐 Public Mode (Unlinked)</span>') +
-                                '</div>' +
-                                '</div>'
-                            );
+                            var row = document.createElement("div");
+                            row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;";
+                            var left = document.createElement("div");
+                            var strong = document.createElement("strong");
+                            strong.textContent = u.username;
+                            var sep = document.createTextNode(" — ");
+                            var status = document.createElement("span");
+                            if (u.isLinked) {
+                                status.style.color = "#4cd964";
+                                status.textContent = "✅ Connected (" + (u.linkedAccount || "") + ")";
+                            } else {
+                                status.style.color = "#999";
+                                status.textContent = "🌐 Public Mode (Unlinked)";
+                            }
+                            left.appendChild(strong);
+                            left.appendChild(sep);
+                            left.appendChild(status);
+                            row.appendChild(left);
+                            rowEls.push(row);
                         });
-                        document.getElementById("linkedUsersTable").innerHTML = rows.join("") || "No users found.";
+                        if (rowEls.length > 0) {
+                            table.replaceChildren.apply(table, rowEls);
+                        } else {
+                            table.textContent = "No users found.";
+                        }
                     } catch (e) {
                         console.error(e);
                     }
@@ -559,7 +587,7 @@
                     var jfUser = sel.value || "";
                     var jfUid = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute("data-uid") : "";
 
-                    var res = await fetch("/api/youtubePlugin/auth/device-code", {method: "POST"});
+                    var res = await authFetch("/api/youtubePlugin/auth/device-code", {method: "POST"});
                     var data = await res.json();
                     document.getElementById("tvCodeDisplayArea").style.display = "block";
                     document.getElementById("tvUserCodeText").textContent = data.user_code || "ERROR";
@@ -568,7 +596,7 @@
                     if (data.device_code) {
                         pollTimer = setInterval(async function () {
                             try {
-                                var pr = await fetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfUser) + "&jellyfinUserId=" + encodeURIComponent(jfUid || ""), {method: "POST"});
+                                var pr = await authFetch("/api/youtubePlugin/auth/poll?deviceCode=" + encodeURIComponent(data.device_code) + "&jellyfinUser=" + encodeURIComponent(jfUser) + "&jellyfinUserId=" + encodeURIComponent(jfUid || ""), {method: "POST"});
                                 var pd = await pr.json();
                                 if (pd.success) {
                                     clearInterval(pollTimer);
