@@ -1,7 +1,5 @@
 {
-  "testingPlatform": {
-    "commandLine": {
-      "useTestingPlatform": true
-    }
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
   }
 }
