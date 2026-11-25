@@ -288,7 +288,10 @@
                         headers.set("X-Emby-Token", token);
                     }
                     options.headers = headers;
-                    return fetch(url, options);
+                    var resolvedUrl = (window.ApiClient && window.ApiClient.getUrl)
+                        ? window.ApiClient.getUrl(url.replace(/^\/+/, ""))
+                        : url;
+                    return fetch(resolvedUrl, options);
                 }
 
                 function createBadge(ok, label) {
@@ -500,10 +503,22 @@
                     var jfUser = sel.value || "";
                     var jfUid = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute("data-uid") : "";
 
-                    var res = await authFetch("/api/youtubePlugin/auth/device-code", { method: "POST" });
-                    var data = await res.json();
+                    var clientId = document.getElementById("txtOAuthClientId").value.trim();
+                    var clientSecret = document.getElementById("txtOAuthClientSecret").value.trim();
+                    var res = await authFetch("/api/youtubePlugin/auth/device-code", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ clientId: clientId, clientSecret: clientSecret })
+                    });
+                    var data = {};
+                    try { data = await res.json(); } catch (e) { }
                     document.getElementById("tvCodeDisplayArea").style.display = "block";
                     document.getElementById("tvUserCodeText").textContent = data.user_code || "ERROR";
+                    if (!res.ok || !data.device_code) {
+                        document.getElementById("tvCodeStatusText").style.color = "#ff4d4d";
+                        document.getElementById("tvCodeStatusText").textContent = "❌ " + (data.error || ("Device code request failed (HTTP " + res.status + ")"));
+                        return;
+                    }
                     document.getElementById("tvCodeStatusText").style.color = "#aaa";
                     document.getElementById("tvCodeStatusText").textContent = "Waiting for you to enter the code for Jellyfin user '" + jfUser + "'...";
 

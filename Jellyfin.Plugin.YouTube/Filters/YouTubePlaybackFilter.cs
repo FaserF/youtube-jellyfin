@@ -161,7 +161,7 @@ public class YouTubePlaybackFilter : IAsyncActionFilter, IAsyncResultFilter
                                           (item.Path != null && (item.Path.Contains("YouTubeAudio", StringComparison.OrdinalIgnoreCase) ||
                                                                  item.Path.Contains("/audio.m4a", StringComparison.OrdinalIgnoreCase)));
                             var trailerParam = isTrailer ? "?isTrailer=true" : string.Empty;
-                            var hasHls = !Api.YouTubeApiClient.TryGetCachedStream(videoId, out var cachedStream) ||
+                            var hasHls = Api.YouTubeApiClient.TryGetCachedStream(videoId, out var cachedStream) &&
                                          !string.IsNullOrWhiteSpace(cachedStream?.HlsManifestUrl);
                             var videoEndpoint = hasHls ? "master.m3u8" : "play";
                             var target = isAudio

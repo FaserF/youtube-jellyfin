@@ -186,6 +186,16 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
                     Type = ChannelItemType.Folder
                 });
             }
+            else
+            {
+                items.Add(new ChannelItemInfo
+                {
+                    Id = "login_code_error",
+                    Name = "⚠️ Unable to request TV activation code — open Plugin Settings",
+                    Overview = "Check OAuth Client ID and Client Secret in Jellyfin Dashboard -> Plugins -> YouTube.",
+                    Type = ChannelItemType.Folder
+                });
+            }
 
             return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
         }
@@ -617,7 +627,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
 
         var directPlayUrl = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl)
             ? streamInfo.HlsManifestUrl
-            : (!string.IsNullOrWhiteSpace(streamInfo.DirectStreamUrl) ? streamInfo.DirectStreamUrl : $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/master.m3u8");
+            : (!string.IsNullOrWhiteSpace(streamInfo.DirectStreamUrl) ? streamInfo.DirectStreamUrl : $"{internalServerUrl}/api/youtubePlugin/stream/{videoId}/play");
 
         var source = new MediaSourceInfo
         {
@@ -625,7 +635,7 @@ public class YouTubeChannel : IChannel, IRequiresMediaInfoCallback, IHasCacheKey
             Name = $"{streamInfo.Title} ({streamInfo.Height}p Direct)",
             Path = directPlayUrl,
             Protocol = MediaProtocol.Http,
-            Container = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl) ? "hls" : "mp4",
+            Container = !string.IsNullOrWhiteSpace(streamInfo.HlsManifestUrl) ? "m3u8" : "mp4",
             IsRemote = true,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,

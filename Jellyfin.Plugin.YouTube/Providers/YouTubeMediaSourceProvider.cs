@@ -93,7 +93,7 @@ public class YouTubeMediaSourceProvider : IMediaSourceProvider, IHasOrder
 
         try
         {
-            const string internalBaseUrl = "http://127.0.0.1:8096";
+            var internalBaseUrl = ScheduledTasks.SyncYouTubeStrmTask.GetStrmServerBaseUrl(config);
 
             using var client = new YouTubeApiClient(
                 _httpClientFactory.CreateClient("YouTube"),

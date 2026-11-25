@@ -110,13 +110,42 @@ public class YouTubePluginController : ControllerBase
         return Content(reader.ReadToEnd(), "application/javascript; charset=utf-8");
     }
 
-    [HttpPost("auth/device-code")]
-    public async Task<ActionResult<YouTubeDeviceCodeResponse>> RequestDeviceCode(CancellationToken cancellationToken)
+    public sealed class DeviceCodeRequest
     {
+        public string? ClientId { get; set; }
+        public string? ClientSecret { get; set; }
+    }
+
+    [HttpPost("auth/device-code")]
+    public async Task<ActionResult<YouTubeDeviceCodeResponse>> RequestDeviceCode(
+        [FromBody] DeviceCodeRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (request != null && Plugin.Instance != null)
+        {
+            var changed = false;
+            if (!string.IsNullOrWhiteSpace(request.ClientId) &&
+                !string.Equals(Plugin.Instance.Configuration.OAuthClientId, request.ClientId.Trim(), StringComparison.Ordinal))
+            {
+                Plugin.Instance.Configuration.OAuthClientId = request.ClientId.Trim();
+                changed = true;
+            }
+            if (!string.IsNullOrWhiteSpace(request.ClientSecret) &&
+                !string.Equals(Plugin.Instance.Configuration.OAuthClientSecret, request.ClientSecret.Trim(), StringComparison.Ordinal))
+            {
+                Plugin.Instance.Configuration.OAuthClientSecret = request.ClientSecret.Trim();
+                changed = true;
+            }
+            if (changed)
+            {
+                Plugin.Instance.SaveConfiguration();
+            }
+        }
+
         using var client = CreateClient();
-        var resp = await client.RequestDeviceCodeAsync(cancellationToken).ConfigureAwait(false);
+        var (resp, err) = await client.RequestDeviceCodeWithDiagnosticsAsync(request?.ClientId, cancellationToken).ConfigureAwait(false);
         return resp == null
-            ? StatusCode(StatusCodes.Status502BadGateway, new { error = "Failed to request YouTube TV device code" })
+            ? StatusCode(StatusCodes.Status502BadGateway, new { error = err ?? "Failed to request YouTube TV device code" })
             : Ok(resp);
     }
 
@@ -295,13 +324,30 @@ public class YouTubePluginController : ControllerBase
         Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
         Response.Headers["Access-Control-Allow-Headers"] = "Range, Accept-Encoding";
 
+        var preferPlay = Request.Path.Value?.EndsWith("/play", StringComparison.OrdinalIgnoreCase) == true;
+        var hasHls = !string.IsNullOrWhiteSpace(info.HlsManifestUrl);
+        var hasDirect = !string.IsNullOrWhiteSpace(info.DirectStreamUrl);
+
         if (HttpMethods.IsHead(Request.Method))
         {
-            Response.ContentType = "application/vnd.apple.mpegurl; charset=utf-8";
+            Response.ContentType = (preferPlay && hasDirect) || !hasHls
+                ? "video/mp4"
+                : "application/vnd.apple.mpegurl; charset=utf-8";
             return Ok();
         }
 
-        if (!string.IsNullOrWhiteSpace(info.HlsManifestUrl))
+        if (preferPlay && hasDirect)
+        {
+            if (string.IsNullOrWhiteSpace(Config.ProxyUrl) &&
+                info.DirectStreamUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return Redirect(info.DirectStreamUrl);
+            }
+
+            return await ProxyRemoteUrlInternalAsync(client, info.DirectStreamUrl, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (hasHls)
         {
             try
             {
@@ -318,7 +364,7 @@ public class YouTubePluginController : ControllerBase
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(info.DirectStreamUrl))
+        if (hasDirect)
         {
             if (string.IsNullOrWhiteSpace(Config.ProxyUrl) &&
                 info.DirectStreamUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))

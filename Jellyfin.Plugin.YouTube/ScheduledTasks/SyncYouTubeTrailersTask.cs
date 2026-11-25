@@ -143,7 +143,8 @@ public class SyncYouTubeTrailersTask : IScheduledTask
 
                 if (!string.IsNullOrWhiteSpace(videoId))
                 {
-                    var strmContent = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true\n";
+                    var baseUrl = SyncYouTubeStrmTask.GetStrmServerBaseUrl(Plugin.Instance?.Configuration ?? new PluginConfiguration());
+                    var strmContent = $"{baseUrl}/api/youtubePlugin/stream/{videoId}/play?isTrailer=true\n";
                     await File.WriteAllTextAsync(trailerStrm, strmContent, cancellationToken).ConfigureAwait(false);
 
                     var nfoContent = $@"<?xml version=""1.0"" encoding=""utf-8"" standalone=""yes""?>
@@ -218,7 +219,8 @@ public class SyncYouTubeTrailersTask : IScheduledTask
 
                 if (!string.IsNullOrWhiteSpace(videoId))
                 {
-                    var strmContent = $"http://127.0.0.1:8096/api/youtubePlugin/stream/{videoId}/master.m3u8?isTrailer=true\n";
+                    var baseUrl = SyncYouTubeStrmTask.GetStrmServerBaseUrl(Plugin.Instance?.Configuration ?? new PluginConfiguration());
+                    var strmContent = $"{baseUrl}/api/youtubePlugin/stream/{videoId}/play?isTrailer=true\n";
                     await File.WriteAllTextAsync(trailerStrm, strmContent, cancellationToken).ConfigureAwait(false);
 
                     var nfoContent = $@"<?xml version=""1.0"" encoding=""utf-8"" standalone=""yes""?>

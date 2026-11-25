@@ -319,4 +319,108 @@ public class IssueFixesTests
             File.ReadAllText(jsPath).Should().NotContainEquivalentOf("SmartTube");
         }
     }
+
+    [Fact]
+    public async Task RequestDeviceCode_ShouldSurfaceUpstreamError_WhenGoogleRejectsClient()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":"invalid_client","error_description":"The OAuth client was not found."}""", Encoding.UTF8, "application/json")
+        }));
+
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("YouTube")).Returns(new HttpClient(handler));
+
+        var controller = new YouTubePluginController(
+            factory.Object,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IUserManager>().Object,
+            new Mock<ILogger<YouTubePluginController>>().Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+
+        var result = await controller.RequestDeviceCode(
+            new YouTubePluginController.DeviceCodeRequest { ClientId = "bad-client.apps.googleusercontent.com" },
+            TestContext.Current.CancellationToken);
+
+        var obj = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        obj.StatusCode.Should().Be(StatusCodes.Status502BadGateway);
+        JsonSerializer.Serialize(obj.Value).Should().Contain("invalid_client");
+    }
+
+    [Fact]
+    public async Task PlayOrProxyStream_HeadRequest_ShouldReturnMp4ContentType_ForPlayEndpoint()
+    {
+        const string innertubePlayerJson = """
+        {
+          "videoDetails": { "videoId": "dQw4w9WgXcQ", "title": "Test Video", "lengthSeconds": "212", "author": "Test" },
+          "streamingData": {
+            "formats": [
+              { "itag": 18, "url": "https://rr1---sn.googlevideo.com/videoplayback?mime=video/mp4", "mimeType": "video/mp4; codecs=\"avc1.42001E\"", "width": 640, "height": 360, "bitrate": 500000 }
+            ]
+          }
+        }
+        """;
+
+        var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(innertubePlayerJson, Encoding.UTF8, "application/json")
+        }));
+
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("YouTube")).Returns(new HttpClient(handler));
+
+        var httpCtx = new DefaultHttpContext();
+        httpCtx.Request.Method = HttpMethods.Head;
+        httpCtx.Request.Path = "/api/youtubePlugin/stream/dQw4w9WgXcQ/play";
+
+        var controller = new YouTubePluginController(
+            factory.Object,
+            new Mock<ILibraryManager>().Object,
+            new Mock<IUserManager>().Object,
+            new Mock<ILogger<YouTubePluginController>>().Object,
+            new Mock<ILoggerFactory>().Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpCtx }
+        };
+
+        var res = await controller.PlayOrProxyStream("dQw4w9WgXcQ", false, TestContext.Current.CancellationToken);
+        res.Should().BeOfType<OkResult>();
+        httpCtx.Response.ContentType.Should().Be("video/mp4");
+    }
+
+    [Fact]
+    public async Task YouTubePlaybackFilter_UncachedStream_ShouldRedirectToPlayNotMasterM3u8()
+    {
+        const string freshVideoId = "Zx9_TestVid1";
+        var itemId = Guid.NewGuid();
+        var item = new MediaBrowser.Controller.Entities.TV.Episode
+        {
+            Id = itemId,
+            Name = "Uncached Video",
+            Path = $"/data/youtube/Test/Season 1/Ep [YouTubeVideo-{freshVideoId}].strm"
+        };
+        item.ProviderIds[Jellyfin.Plugin.YouTube.Providers.YouTubeIdKeys.Video] = freshVideoId;
+
+        var libMgr = new Mock<ILibraryManager>();
+        libMgr.Setup(l => l.GetItemById(itemId)).Returns(item);
+
+        var filter = new Jellyfin.Plugin.YouTube.Filters.YouTubePlaybackFilter(libMgr.Object);
+        var httpCtx = new DefaultHttpContext();
+        httpCtx.Request.Path = $"/Videos/{itemId:N}/stream";
+        httpCtx.Request.Scheme = "https";
+        httpCtx.Request.Host = new HostString("jf.example.com");
+
+        var actionCtx = new ActionContext(httpCtx, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        var executingCtx = new Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext(
+            actionCtx,
+            [],
+            new Dictionary<string, object?> { ["itemId"] = itemId },
+            new object());
+
+        await filter.OnActionExecutionAsync(executingCtx, () => Task.FromResult(
+            new Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext(actionCtx, [], new object())));
+
+        var redirect = executingCtx.Result.Should().BeOfType<RedirectResult>().Subject;
+        redirect.Url.Should().Be($"https://jf.example.com/api/youtubePlugin/stream/{freshVideoId}/play");
+    }
 }

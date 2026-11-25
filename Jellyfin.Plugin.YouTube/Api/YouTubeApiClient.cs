@@ -99,12 +99,21 @@ public partial class YouTubeApiClient : IDisposable
 
     public async Task<YouTubeDeviceCodeResponse?> RequestDeviceCodeAsync(CancellationToken cancellationToken = default)
     {
+        var (resp, _) = await RequestDeviceCodeWithDiagnosticsAsync(null, cancellationToken).ConfigureAwait(false);
+        return resp;
+    }
+
+    public async Task<(YouTubeDeviceCodeResponse? Response, string? Error)> RequestDeviceCodeWithDiagnosticsAsync(
+        string? overrideClientId = null,
+        CancellationToken cancellationToken = default)
+    {
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        var clientId = GetEffectiveClientId(config);
+        var clientId = !string.IsNullOrWhiteSpace(overrideClientId) ? overrideClientId.Trim() : GetEffectiveClientId(config);
         if (string.IsNullOrWhiteSpace(clientId))
         {
-            _logger.LogWarning("Cannot request YouTube device code: OAuthClientId is not configured.");
-            return null;
+            const string msg = "OAuthClientId is not configured.";
+            _logger.LogWarning("Cannot request YouTube device code: {Message}", msg);
+            return (null, msg);
         }
 
         var isCustomClient = !string.Equals(clientId, DefaultTvClientId, StringComparison.OrdinalIgnoreCase);
@@ -112,19 +121,19 @@ public partial class YouTubeApiClient : IDisposable
             ? "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly"
             : "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content";
 
-        var resp = await TryRequestDeviceCodeWithScopeAsync(clientId, primaryScope, cancellationToken).ConfigureAwait(false);
+        var (resp, err) = await TryRequestDeviceCodeWithScopeAsync(clientId, primaryScope, cancellationToken).ConfigureAwait(false);
         if (resp == null && isCustomClient)
         {
-            resp = await TryRequestDeviceCodeWithScopeAsync(
+            (resp, err) = await TryRequestDeviceCodeWithScopeAsync(
                 clientId,
                 "https://www.googleapis.com/auth/youtube.readonly",
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return resp;
+        return (resp, resp != null ? null : err);
     }
 
-    private async Task<YouTubeDeviceCodeResponse?> TryRequestDeviceCodeWithScopeAsync(
+    private async Task<(YouTubeDeviceCodeResponse? Response, string? Error)> TryRequestDeviceCodeWithScopeAsync(
         string clientId,
         string scope,
         CancellationToken cancellationToken)
@@ -145,10 +154,10 @@ public partial class YouTubeApiClient : IDisposable
         if (!resp.IsSuccessStatusCode)
         {
             _logger.LogWarning("Google OAuth device code request failed ({Scope}) with status {StatusCode}: {Response}", scope, resp.StatusCode, json);
-            return null;
+            return (null, $"Google OAuth HTTP {(int)resp.StatusCode} ({scope}): {json}");
         }
 
-        return JsonSerializer.Deserialize<YouTubeDeviceCodeResponse>(json);
+        return (JsonSerializer.Deserialize<YouTubeDeviceCodeResponse>(json), null);
     }
 
     public async Task<(bool Success, string? Error, YouTubeUserAccountEntry? Account)> PollDeviceTokenAsync(

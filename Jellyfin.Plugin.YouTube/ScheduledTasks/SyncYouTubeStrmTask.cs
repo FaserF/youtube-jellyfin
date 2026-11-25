@@ -382,7 +382,7 @@ public class SyncYouTubeStrmTask : IScheduledTask
             }
 
             var serverBaseUrl = GetStrmServerBaseUrl(config);
-            var expectedUrl = $"{serverBaseUrl}/api/youtubePlugin/stream/{v.VideoId}/master.m3u8";
+            var expectedUrl = $"{serverBaseUrl}/api/youtubePlugin/stream/{v.VideoId}/play";
             if (!File.Exists(strmPath) || !string.Equals(await File.ReadAllTextAsync(strmPath, cancellationToken).ConfigureAwait(false), expectedUrl, StringComparison.Ordinal))
             {
                 await File.WriteAllTextAsync(strmPath, expectedUrl, cancellationToken).ConfigureAwait(false);
